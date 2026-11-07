@@ -1,0 +1,11 @@
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.derivedData/
+build/
+.swiftpm/
+Packages/PawTrustCore/.build/
+**/.build/
+*.moved-aside
+.swiftpm/config
