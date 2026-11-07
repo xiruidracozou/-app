@@ -90,11 +90,28 @@ Release 构建打开后先看到门槛，不进地图。可以在本机识别证
 
 编写和检查发生在 Ubuntu 24.04 上。系统里没有 `xcodebuild`，也没有 iOS 模拟器，所以 **没有编译 PawTrust.app，没有启动模拟器，也没有 iPhone 运行截图**。
 
-为了跑纯逻辑测试，使用 Swift 6.2.1（Linux）。在 `Packages/PawTrustCore` 执行 `swift test`：**22 个测试通过，0 失败**。其中 `CatalogTests` 4 个，`ExploreLogicTests` 10 个，`PrivacyAndAccessTests` 8 个。后者覆盖白名单提取、审核状态机、未知规则、本地解析、贡献节流，以及源码里的存储和外发路径扫描。
+为了跑纯逻辑测试，使用 Swift 6.2.1（Linux）。在 `Packages/PawTrustCore` 执行 `swift test`：**23 个测试通过，0 失败**。其中 `CatalogTests` 4 个，`ExploreLogicTests` 10 个，`PrivacyAndAccessTests` 9 个。后者覆盖白名单提取、审核状态机、未知规则、本地解析、贡献节流、调试截图参数本身不会解锁地图，以及源码里的存储和外发路径扫描。界面测试 `PawTrustUITests` 需要 Mac 上的模拟器，这里没有跑。
 
 这些测试不包含 SwiftUI、MapKit 或 Vision。它们通过，只说明这些计算和源码扫描是对的，不能当成应用已在 iOS 上打开，也不能当成物理零残留的证明。
 
 另外检查了 `project.pbxproj` 的括号平衡，以及工程对象 ID 都有定义。这不是编译。
+
+## 调试截图
+
+只对 **Debug** 构建生效。Release 会忽略 `-PawTrustDemoScreenshots`，也不会因此打开地图。截图使用合成犬只「豆豆 / 贵宾 / 母 / 小型 / 成年」，写在单独的临时存储里，并在画面上标明「调试截图 · 合成示例 · 不是真实证件 · 不是审核通过」。
+
+手动启动时，在模拟器安装 Debug 包后：
+
+```bash
+xcrun simctl launch 92F16493-876C-4CBB-AE77-1F779BCEF097 com.pawtrust.demo.pawprints -PawTrustDemoScreenshots gate
+xcrun simctl launch 92F16493-876C-4CBB-AE77-1F779BCEF097 com.pawtrust.demo.pawprints -PawTrustDemoScreenshots map
+xcrun simctl launch 92F16493-876C-4CBB-AE77-1F779BCEF097 com.pawtrust.demo.pawprints -PawTrustDemoScreenshots detail
+xcrun simctl launch 92F16493-876C-4CBB-AE77-1F779BCEF097 com.pawtrust.demo.pawprints -PawTrustDemoScreenshots profile
+```
+
+第二个参数分别是门槛、演示地图、徐汇滨江绿地详情、合成档案。每次启动前可以先 `simctl terminate`。
+
+界面测试 `PawTrustUITests` 用同样的参数截四张图，附在 xcresult 里。若设置了 `PAWTRUST_SCREENSHOT_DIR`，测试进程还会在该目录写 PNG。这台仓库所在的 Linux 环境没有执行过这些命令。
 
 ## 请在 Mac 上核对
 

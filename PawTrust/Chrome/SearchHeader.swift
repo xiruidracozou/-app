@@ -8,6 +8,19 @@ struct SearchHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let banner = model.screenshotBanner {
+                Text(banner)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PawTheme.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(PawTheme.cobalt, lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
+            }
             if case .demo(let label) = model.access {
                 HStack {
                     Text(label)

@@ -50,6 +50,21 @@ public struct UnavailableDogLicenseVerifier: Equatable, Sendable {
     }
 }
 
+public enum ScreenshotRequest: String, Equatable, Sendable {
+    case gate
+    case map
+    case detail
+    case profile
+
+    /// Parses a debug launch request. It does not unlock the map by itself.
+    public static func parse(_ arguments: [String]) -> ScreenshotRequest? {
+        guard let index = arguments.firstIndex(of: "-PawTrustDemoScreenshots") else { return nil }
+        let next = arguments.index(after: index)
+        guard next < arguments.endIndex else { return .gate }
+        return ScreenshotRequest(rawValue: arguments[next]) ?? .gate
+    }
+}
+
 public enum AccessController {
     public static func initial() -> MapAccess {
         .locked(.needsLocalProfile)
@@ -81,6 +96,10 @@ public enum AccessController {
             return hasProfile ? .locked(.profileSavedAwaitingVerification) : .locked(.needsLocalProfile)
         }
         return .demo(DemoCopy.demoBanner)
+    }
+
+    public static func allowsScreenshotBootstrap(channel: BuildChannel) -> Bool {
+        channel == .debug
     }
 
     public static func resolvingLaunch(channel: BuildChannel, hasProfile: Bool, storedDemoFlag: Bool) -> MapAccess {

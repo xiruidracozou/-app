@@ -37,6 +37,7 @@ struct ExploreSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityIdentifier(showDetail ? "screen.detail" : "screen.peek")
         .background {
             if showDetail {
                 UnevenRoundedRectangle(

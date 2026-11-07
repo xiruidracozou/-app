@@ -33,6 +33,7 @@ final class CatalogTests: XCTestCase {
                 DemoCopy.attributeNote,
                 DemoCopy.readingGuide,
                 DemoCopy.demoBanner,
+                DemoCopy.screenshotBanner,
                 DemoCopy.verifierUnavailable,
                 DemoCopy.localParseLabel,
                 DemoCopy.retentionSummary,

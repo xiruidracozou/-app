@@ -12,12 +12,18 @@
 
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* PawTrust.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PawTrust.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000020 /* PawTrustUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PawTrustUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000002 /* PawTrust */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PawTrust;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000021 /* PawTrustUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PawTrustUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -38,6 +44,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* PawTrust */,
+				A10000000000000000000021 /* PawTrustUITests */,
 				A10000000000000000000016 /* Config */,
 				A10000000000000000000006 /* Products */,
 			);
@@ -47,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000001 /* PawTrust.app */,
+				A10000000000000000000020 /* PawTrustUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -96,6 +104,26 @@
 			productReference = A10000000000000000000001 /* PawTrust.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A10000000000000000000022 /* PawTrustUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000028 /* Build configuration list for PBXNativeTarget "PawTrustUITests" */;
+			buildPhases = (
+				A10000000000000000000023 /* Sources */,
+				A10000000000000000000024 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000027 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000021 /* PawTrustUITests */,
+			);
+			name = PawTrustUITests;
+			productName = PawTrustUITests;
+			productReference = A10000000000000000000020 /* PawTrustUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -108,6 +136,10 @@
 				TargetAttributes = {
 					A10000000000000000000007 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					A10000000000000000000022 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A10000000000000000000007;
 					};
 				};
 			};
@@ -131,9 +163,48 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000007 /* PawTrust */,
+				A10000000000000000000022 /* PawTrustUITests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000024 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000026 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000000D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000007;
+			remoteInfo = PawTrust;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000027 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000007 /* PawTrust */;
+			targetProxy = A10000000000000000000026 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A1000000000000000000000B /* Resources */ = {
@@ -273,12 +344,63 @@
 		};
 /* End XCBuildConfiguration section */
 
+A10000000000000000000029 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pawtrust.demo.pawprints.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = PawTrust;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PawTrust.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PawTrust";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+			};
+			name = Debug;
+		};
+		A1000000000000000000002A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pawtrust.demo.pawprints.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = PawTrust;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PawTrust.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PawTrust";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
 /* Begin XCConfigurationList section */
 		A10000000000000000000008 /* Build configuration list for PBXNativeTarget "PawTrust" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A10000000000000000000012 /* Debug */,
 				A10000000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000028 /* Build configuration list for PBXNativeTarget "PawTrustUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000029 /* Debug */,
+				A1000000000000000000002A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

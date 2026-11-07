@@ -10,6 +10,18 @@ struct GateScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let banner = model.screenshotBanner {
+                    Text(banner)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PawTheme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(PawTheme.cobalt, lineWidth: 1)
+                        )
+                }
                 header
                 retentionCard
                 captureButtons
@@ -25,6 +37,7 @@ struct GateScreen: View {
             .padding(20)
         }
         .background(PawTheme.mapBackdrop)
+        .accessibilityIdentifier(model.screenshotRequest == .profile ? "screen.profile" : "screen.gate")
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { @MainActor in
@@ -101,18 +114,7 @@ struct GateScreen: View {
             #if DEBUG
             Button("填入合成示例文字（不是真实证件）") {
                 model.discardSensitiveMaterial()
-                model.applyRecognizedLines([
-                    "犬名：豆豆",
-                    "品种：贵宾",
-                    "性别：母",
-                    "体型：小型",
-                    "年龄：4岁",
-                    "主人姓名：合成主人甲",
-                    "犬证号：SYN000",
-                    "芯片号：CHIP000",
-                    "联系电话：00011122233",
-                    "住址：合成路零号",
-                ])
+                model.applyRecognizedLines(ScreenshotBootstrap.syntheticLines)
             }
             .font(.subheadline.weight(.semibold))
             .frame(minHeight: 44)

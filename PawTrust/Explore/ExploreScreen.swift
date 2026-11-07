@@ -95,6 +95,7 @@ struct ExploreScreen: View {
             .background(PawTheme.mapBackdrop)
         }
         .ignoresSafeArea()
+        .accessibilityIdentifier("screen.map")
         .preferredColorScheme(.light)
         .tint(PawTheme.cobalt)
         .confirmationDialog(

@@ -47,6 +47,18 @@ final class PrivacyAndAccessTests: XCTestCase {
         XCTAssertTrue(Set(object.keys).isSubset(of: allowed))
     }
 
+    func testScreenshotArgumentsDoNotUnlockByThemselves() {
+        XCTAssertNil(ScreenshotRequest.parse(["-AppleLanguages", "zh-Hans"]))
+        XCTAssertEqual(ScreenshotRequest.parse(["-PawTrustDemoScreenshots", "map"]), .map)
+        XCTAssertEqual(ScreenshotRequest.parse(["-PawTrustDemoScreenshots", "detail"]), .detail)
+        XCTAssertEqual(ScreenshotRequest.parse(["-PawTrustDemoScreenshots", "profile"]), .profile)
+        XCTAssertEqual(ScreenshotRequest.parse(["-PawTrustDemoScreenshots"]), .gate)
+        XCTAssertEqual(ScreenshotRequest.parse(["-PawTrustDemoScreenshots", "unknown"]), .gate)
+        XCTAssertFalse(AccessController.allowsScreenshotBootstrap(channel: .release))
+        XCTAssertTrue(AccessController.allowsScreenshotBootstrap(channel: .debug))
+        XCTAssertFalse(AccessController.afterExplicitDemo(channel: .release, hasProfile: true).showsMap)
+    }
+
     func testWordsOnAPageDoNotUnlockAndUnavailableFailsClosed() {
         XCTAssertEqual(UnavailableDogLicenseVerifier().evaluate(), .unavailable)
         XCTAssertEqual(AccessController.afterProfileSaved(), .locked(.profileSavedAwaitingVerification))
@@ -267,7 +279,7 @@ final class PrivacyAndAccessTests: XCTestCase {
             + swiftFiles(under: root.appendingPathComponent("Packages/PawTrustCore/Sources"))
         XCTAssertFalse(sources.isEmpty)
         let allowedKeys: Set<String> = [
-            StorageKey.favorites, StorageKey.profile, StorageKey.contributions, StorageKey.demoAccess,
+            StorageKey.favorites, StorageKey.profile, StorageKey.contributions, StorageKey.demoAccess, StorageKey.screenshotSuite,
         ]
         let bannedAPIs = ["URLSession", "UIImageWriteToSavedPhotosAlbum", "CryptoKit", "SHA256", "CC_SHA", "NSLog(", "Logger(", "print("]
         var findings: [String] = []

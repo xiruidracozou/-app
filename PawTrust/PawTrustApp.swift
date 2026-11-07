@@ -7,6 +7,14 @@ struct PawTrustApp: App {
 
     init() {
         #if DEBUG
+        if let request = ScreenshotRequest.parse(CommandLine.arguments) {
+            let suite = UserDefaults(suiteName: StorageKey.screenshotSuite) ?? .standard
+            suite.removePersistentDomain(forName: StorageKey.screenshotSuite)
+            let model = ExploreModel(defaults: suite, channel: .debug)
+            ScreenshotBootstrap.apply(request, to: model)
+            _model = State(initialValue: model)
+            return
+        }
         let channel = BuildChannel.debug
         #else
         let channel = BuildChannel.release

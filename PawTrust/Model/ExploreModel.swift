@@ -54,6 +54,8 @@ final class ExploreModel {
     var contributionPlaceID: String?
     var showNewPlace = false
     var showProfile = false
+    var screenshotBanner: String?
+    var screenshotRequest: ScreenshotRequest?
     var captureToken = UUID()
 
     private let defaults: UserDefaults

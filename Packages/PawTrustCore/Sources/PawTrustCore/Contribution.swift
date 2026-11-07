@@ -191,4 +191,6 @@ public enum StorageKey {
     public static let profile = "pawtrust.dog-profile.v1"
     public static let contributions = "pawtrust.contributions.v1"
     public static let demoAccess = "pawtrust.demo-access.v1"
+    /// Isolated defaults domain for debug screenshot launches. Wiped at each launch.
+    public static let screenshotSuite = "pawtrust.screenshot.transient"
 }
