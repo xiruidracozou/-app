@@ -4,6 +4,8 @@ public enum ExploreLogic {
     public static func visiblePlaces(_ state: ExploreState) -> [Place] {
         let query = normalized(state.query)
         var result = state.places.filter { place in
+            if let city = state.cityFilter, place.city != city { return false }
+            if let category = state.categoryFilter, place.category != category { return false }
             if state.favoritesOnly && !state.favoriteIDs.contains(place.id) {
                 return false
             }
@@ -14,12 +16,29 @@ public enum ExploreLogic {
             let haystack = normalized("\(place.name) \(place.district) \(place.kindLabel)")
             return haystack.contains(query)
         }
+        if state.asksAboutRules {
+            let split = RuleMatcher.split(places: result, topics: state.requiredTopics)
+            let order = (split.matched + split.unknown).map(\.placeID)
+            result = order.compactMap { id in result.first { $0.id == id } }
+        }
         if state.locationAuth == .granted, let user = state.userCoordinate {
             result.sort {
                 Geo.meters(from: user, to: $0.coordinate) < Geo.meters(from: user, to: $1.coordinate)
             }
         }
         return result
+    }
+
+    public static func unknownPlaceIDs(_ state: ExploreState) -> Set<String> {
+        guard state.asksAboutRules else { return [] }
+        let visibleIDs = Set(visiblePlaces(state).map(\.id))
+        let unknown = RuleMatcher.split(places: state.places, topics: state.requiredTopics).unknown.map(\.placeID)
+        return Set(unknown.filter { visibleIDs.contains($0) })
+    }
+
+    public static func assessment(for place: Place, state: ExploreState) -> PlaceAssessment? {
+        guard state.asksAboutRules else { return nil }
+        return RuleMatcher.assess(place: place, topics: state.requiredTopics)
     }
 
     public static func suggestedPlace(_ state: ExploreState) -> Place? {
@@ -38,6 +57,23 @@ public enum ExploreLogic {
 
     public static func peekSummary(_ state: ExploreState) -> PeekSummary {
         let visible = visiblePlaces(state)
+        if state.asksAboutRules {
+            let pool = state.places.filter { place in
+                if let city = state.cityFilter, place.city != city { return false }
+                if let category = state.categoryFilter, place.category != category { return false }
+                return true
+            }
+            let split = RuleMatcher.split(places: pool, topics: state.requiredTopics)
+            let title = split.matched.isEmpty ? "没有已确认符合的地点" : "已确认符合"
+            let subtitle = "\(split.matched.count) 个条件已确认 · \(split.unknown.count) 个条件未知"
+            return PeekSummary(
+                title: title,
+                subtitle: subtitle,
+                suggestedPlaceID: visible.first?.id,
+                action: visible.isEmpty ? .clearSearchAndFilters : .openSuggested,
+                accessibilityHint: "未知条件不能当作满足。\(subtitle)"
+            )
+        }
         if let first = visible.first {
             let distance = distance(for: first, state: state)
             let title = state.favoritesOnly ? "已收藏的去处" : "附近好去处"
@@ -144,6 +180,62 @@ public enum ExploreLogic {
         next.query = ""
         next.filters.removeAll()
         next.favoritesOnly = false
+        next.cityFilter = .shanghai
+        next.categoryFilter = nil
+        next.requiredTopics = []
+        next.nearMe = false
+        next.unmatchedTerms = []
+        return reconcile(next)
+    }
+
+    public static func settingCity(_ state: ExploreState, _ city: City?) -> ExploreState {
+        var next = state
+        next.cityFilter = city
+        return reconcile(next)
+    }
+
+    public static func applyingComposer(_ state: ExploreState, text: String) -> ExploreState {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            var next = state
+            next.query = ""
+            next.categoryFilter = nil
+            next.requiredTopics = []
+            next.nearMe = false
+            next.unmatchedTerms = []
+            return reconcile(next)
+        }
+        let interpretation = LocalUtteranceInterpreter().interpret(
+            trimmed,
+            following: state.queryContext,
+            places: state.places
+        )
+        if interpretation.isNameOnly {
+            var next = state
+            next.categoryFilter = nil
+            next.requiredTopics = []
+            next.nearMe = false
+            next.unmatchedTerms = []
+            if let city = interpretation.context.city {
+                next.cityFilter = city
+            }
+            next.query = trimmed
+            return reconcile(next)
+        }
+        var next = state
+        next.query = ""
+        next.cityFilter = interpretation.context.city
+        next.categoryFilter = interpretation.context.category
+        next.requiredTopics = interpretation.context.topics
+        next.nearMe = interpretation.context.nearMe
+        next.unmatchedTerms = interpretation.unmatched
+        next.interpreterLabel = interpretation.label
+        return reconcile(next)
+    }
+
+    public static func removingTopic(_ state: ExploreState, _ topic: RuleTopic) -> ExploreState {
+        var next = state
+        next.requiredTopics.removeAll { $0 == topic }
         return reconcile(next)
     }
 

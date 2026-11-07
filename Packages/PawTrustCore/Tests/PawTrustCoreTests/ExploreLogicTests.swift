@@ -9,9 +9,15 @@ final class ExploreLogicTests: XCTestCase {
         XCTAssertNil(state.selectedPlaceID)
         XCTAssertEqual(state.detent, .peek)
         XCTAssertTrue(state.filters.isEmpty)
-        XCTAssertEqual(ExploreLogic.visiblePlaces(state).map(\.id), SampleCatalog.places.map(\.id))
+        XCTAssertEqual(
+            ExploreLogic.visiblePlaces(state).map(\.id),
+            SampleCatalog.places(in: .shanghai).map(\.id)
+        )
         XCTAssertEqual(ExploreLogic.peekSummary(state).title, "附近好去处")
-        XCTAssertEqual(ExploreLogic.peekSummary(state).subtitle, "5 个示例地点")
+        XCTAssertEqual(
+            ExploreLogic.peekSummary(state).subtitle,
+            "\(SampleCatalog.places(in: .shanghai).count) 个示例地点"
+        )
         XCTAssertEqual(ExploreLogic.peekSummary(state).suggestedPlaceID, "fuxing")
     }
 
@@ -26,7 +32,9 @@ final class ExploreLogicTests: XCTestCase {
 
         state = ExploreLogic.clearingFilters(state)
         state = ExploreLogic.settingQuery(state, "  徐汇  ")
-        XCTAssertEqual(Set(ExploreLogic.visiblePlaces(state).map(\.id)), ["xiangyang", "binjiang"])
+        let xuhui = Set(ExploreLogic.visiblePlaces(state).map(\.id))
+        XCTAssertTrue(xuhui.isSuperset(of: ["xiangyang", "binjiang"]))
+        XCTAssertFalse(xuhui.contains("fuxing"))
 
         state = ExploreLogic.settingQuery(state, "公园")
         XCTAssertFalse(ExploreLogic.visiblePlaces(state).contains { $0.id == "binjiang" })
@@ -36,7 +44,7 @@ final class ExploreLogicTests: XCTestCase {
         XCTAssertTrue(ExploreLogic.visiblePlaces(state).isEmpty)
 
         state = ExploreLogic.clearingSearchAndFilters(state)
-        XCTAssertEqual(ExploreLogic.visiblePlaces(state).count, 5)
+        XCTAssertEqual(ExploreLogic.visiblePlaces(state).count, SampleCatalog.places(in: .shanghai).count)
     }
 
     func testWaterAndFenceFilters() {
@@ -121,7 +129,7 @@ final class ExploreLogicTests: XCTestCase {
 
         state = ExploreLogic.showingAllPlaces(state)
         XCTAssertFalse(state.favoritesOnly)
-        XCTAssertEqual(ExploreLogic.visiblePlaces(state).count, 5)
+        XCTAssertEqual(ExploreLogic.visiblePlaces(state).count, SampleCatalog.places(in: .shanghai).count)
 
         var saved = ExploreState.initial()
         saved = ExploreLogic.togglingFavorite(saved, id: "binjiang")

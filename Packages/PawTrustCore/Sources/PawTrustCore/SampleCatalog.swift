@@ -9,6 +9,23 @@ public enum SampleCatalog {
         longitudeDelta: 0.048
     )
 
+    public static let shenzhenRegion = MapRegion(
+        center: Coordinate(latitude: 22.532, longitude: 114.001),
+        latitudeDelta: 0.070,
+        longitudeDelta: 0.160
+    )
+
+    public static func region(for city: City) -> MapRegion {
+        switch city {
+        case .shanghai: initialRegion
+        case .shenzhen: shenzhenRegion
+        }
+    }
+
+    public static func places(in city: City) -> [Place] {
+        places.filter { $0.city == city }
+    }
+
     public static let places: [Place] = [
         Place(
             id: "fuxing",
@@ -23,7 +40,10 @@ public enum SampleCatalog {
             photoName: "place-fuxing",
             exampleDistanceMeters: 650,
             blurb: "示例描述：林荫草坪。是否允许携犬、是否必须牵绳，本应用未核实。",
-            rulesVerified: false
+            rulesVerified: false,
+            city: .shanghai,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
         ),
         Place(
             id: "xiangyang",
@@ -38,7 +58,10 @@ public enum SampleCatalog {
             photoName: "place-xiangyang",
             exampleDistanceMeters: 420,
             blurb: "示例描述：小型绿地。可放绳只用于演示筛选，不是园区许可，规则未核实。",
-            rulesVerified: false
+            rulesVerified: false,
+            city: .shanghai,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
         ),
         Place(
             id: "jingan",
@@ -53,7 +76,10 @@ public enum SampleCatalog {
             photoName: "place-jingan",
             exampleDistanceMeters: 1_100,
             blurb: "示例描述：草坪与水池。水池不等于宠物饮水处，规则未核实。",
-            rulesVerified: false
+            rulesVerified: false,
+            city: .shanghai,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
         ),
         Place(
             id: "renmin",
@@ -68,7 +94,10 @@ public enum SampleCatalog {
             photoName: "place-renmin",
             exampleDistanceMeters: 900,
             blurb: "示例描述：靠近人民广场。是否允许携犬未核实。",
-            rulesVerified: false
+            rulesVerified: false,
+            city: .shanghai,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
         ),
         Place(
             id: "binjiang",
@@ -83,7 +112,118 @@ public enum SampleCatalog {
             photoName: "place-binjiang",
             exampleDistanceMeters: 800,
             blurb: "示例描述：滨江步道。水源只表示附近有河，不代表设有宠物饮水，规则未核实。",
-            rulesVerified: false
+            rulesVerified: false,
+            city: .shanghai,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
+        ),
+        Place(
+            id: "iapm",
+            name: "上海环贸iapm",
+            district: "徐汇",
+            kindLabel: "商场",
+            latitude: 31.2168,
+            longitude: 121.4580,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-renmin",
+            exampleDistanceMeters: 700,
+            blurb: "商场候选示例。是否允许携犬未核实，也不等于商场里每一家店都允许。",
+            rulesVerified: false,
+            city: .shanghai,
+            category: .mall,
+            accessRules: SampleRules.baseline(mentionsStores: true)
+        ),
+        Place(
+            id: "deda",
+            name: "德大西菜社",
+            district: "黄浦",
+            kindLabel: "餐饮候选",
+            latitude: 31.2348,
+            longitude: 121.4840,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-fuxing",
+            exampleDistanceMeters: 500,
+            blurb: "餐饮候选示例。是否允许携犬、体型限制和室内范围都未核实。",
+            rulesVerified: false,
+            city: .shanghai,
+            category: .dining,
+            accessRules: SampleRules.baseline(mentionsStores: false)
+        ),
+        Place(
+            id: "lianhuashan",
+            name: "莲花山公园",
+            district: "福田",
+            kindLabel: "城市公园",
+            latitude: 22.5535,
+            longitude: 114.0580,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-xiangyang",
+            exampleDistanceMeters: 900,
+            blurb: "深圳遛狗地候选。是否允许携犬未核实。",
+            rulesVerified: false,
+            city: .shenzhen,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
+        ),
+        Place(
+            id: "szbay",
+            name: "深圳湾公园",
+            district: "南山",
+            kindLabel: "滨海公园",
+            latitude: 22.5180,
+            longitude: 113.9720,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-binjiang",
+            exampleDistanceMeters: 1_200,
+            blurb: "深圳滨海绿地候选。坐标是公园范围内的一个示意点。是否允许携犬未核实。",
+            rulesVerified: false,
+            city: .shenzhen,
+            category: .walking,
+            accessRules: SampleRules.baseline(mentionsStores: false)
+        ),
+        Place(
+            id: "sz-mixc",
+            name: "深圳湾万象城",
+            district: "南山",
+            kindLabel: "商场",
+            latitude: 22.5096,
+            longitude: 113.9436,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-jingan",
+            exampleDistanceMeters: 1_500,
+            blurb: "商场候选示例。整体是否允许携犬未核实，也不等于每一家店铺允许。",
+            rulesVerified: false,
+            city: .shenzhen,
+            category: .mall,
+            accessRules: SampleRules.baseline(mentionsStores: true)
+        ),
+        Place(
+            id: "sz-mixc-dining",
+            name: "深圳湾万象城餐饮层",
+            district: "南山",
+            kindLabel: "餐饮层",
+            latitude: 22.5102,
+            longitude: 113.9442,
+            leash: .required,
+            fenced: false,
+            water: false,
+            photoName: "place-jingan",
+            exampleDistanceMeters: 1_500,
+            blurb: "商场餐饮层候选，不是某一家店的准入。室内和大型犬规则都未核实。",
+            rulesVerified: false,
+            city: .shenzhen,
+            category: .dining,
+            accessRules: SampleRules.baseline(mentionsStores: true)
         ),
     ]
 }

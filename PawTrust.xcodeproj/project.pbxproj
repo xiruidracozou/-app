@@ -215,6 +215,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "爪印识途";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "只在你拍摄狗证时，于这台设备上识别品种、性别、年龄段和体型。照片不写入相册，也不上传。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "当你点按「附近」或定位按钮时，用来把地图移到你的位置，并计算到示例公园的距离。位置只留在这台设备上，不会上传。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -250,6 +251,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "爪印识途";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "只在你拍摄狗证时，于这台设备上识别品种、性别、年龄段和体型。照片不写入相册，也不上传。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "当你点按「附近」或定位按钮时，用来把地图移到你的位置，并计算到示例公园的距离。位置只留在这台设备上，不会上传。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

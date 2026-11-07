@@ -40,6 +40,12 @@ public struct ExploreState: Equatable, Sendable {
     public var detent: SheetDetent
     public var userCoordinate: Coordinate?
     public var locationAuth: LocationAuth
+    public var cityFilter: City?
+    public var categoryFilter: PlaceCategory?
+    public var requiredTopics: [RuleTopic]
+    public var nearMe: Bool
+    public var unmatchedTerms: [String]
+    public var interpreterLabel: String
 
     public init(
         places: [Place],
@@ -50,7 +56,13 @@ public struct ExploreState: Equatable, Sendable {
         selectedPlaceID: String? = nil,
         detent: SheetDetent = .peek,
         userCoordinate: Coordinate? = nil,
-        locationAuth: LocationAuth = .notRequested
+        locationAuth: LocationAuth = .notRequested,
+        cityFilter: City? = .shanghai,
+        categoryFilter: PlaceCategory? = nil,
+        requiredTopics: [RuleTopic] = [],
+        nearMe: Bool = false,
+        unmatchedTerms: [String] = [],
+        interpreterLabel: String = LocalUtteranceInterpreter.label
     ) {
         self.places = places
         self.query = query
@@ -61,6 +73,18 @@ public struct ExploreState: Equatable, Sendable {
         self.detent = detent
         self.userCoordinate = userCoordinate
         self.locationAuth = locationAuth
+        self.cityFilter = cityFilter
+        self.categoryFilter = categoryFilter
+        self.requiredTopics = requiredTopics
+        self.nearMe = nearMe
+        self.unmatchedTerms = unmatchedTerms
+        self.interpreterLabel = interpreterLabel
+    }
+
+    public var asksAboutRules: Bool { !requiredTopics.isEmpty }
+
+    public var queryContext: QueryContext {
+        QueryContext(city: cityFilter, category: categoryFilter, topics: requiredTopics, nearMe: nearMe)
     }
 
     public static func initial(places: [Place] = SampleCatalog.places) -> ExploreState {

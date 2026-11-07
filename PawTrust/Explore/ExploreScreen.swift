@@ -52,6 +52,29 @@ struct ExploreScreen: View {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(PawTheme.line, lineWidth: 1)
                             )
+                        Button {
+                            model.showProfile = true
+                        } label: {
+                            Image(systemName: "pawprint")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(PawTheme.cobalt)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white, in: Circle())
+                                .overlay(Circle().strokeBorder(PawTheme.line, lineWidth: 1))
+                        }
+                        .accessibilityLabel("犬只档案")
+                        Button {
+                            model.showNewPlace = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(PawTheme.ink)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white, in: Circle())
+                                .overlay(Circle().strokeBorder(PawTheme.line, lineWidth: 1))
+                        }
+                        .accessibilityLabel("添加地点")
+                        .accessibilityHint("记录留在这台设备，状态是待审核且未同步。")
                         Button(action: { model.recenter() }) {
                             Image(systemName: "location")
                                 .font(.body.weight(.semibold))
@@ -86,6 +109,29 @@ struct ExploreScreen: View {
             Button("取消", role: .cancel) { model.routePrompt = nil }
         } message: {
             Text(model.routePrompt?.boundaryStatement ?? DemoCopy.routeBoundary)
+        }
+        .sheet(isPresented: $model.showProfile) {
+            NavigationStack {
+                GateScreen(model: model)
+                    .navigationTitle("犬只档案")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { model.showProfile = false }
+                        }
+                    }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { model.showNewPlace || model.contributionPlaceID != nil },
+            set: { presented in
+                if !presented {
+                    model.showNewPlace = false
+                    model.contributionPlaceID = nil
+                }
+            }
+        )) {
+            ContributionComposer(model: model)
         }
         .onChange(of: model.state.selectedPlaceID) { _, id in
             guard let id, let place = model.place(id) else { return }

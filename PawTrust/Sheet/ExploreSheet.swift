@@ -229,6 +229,26 @@ struct ExploreSheet: View {
                         .frame(minHeight: 32, alignment: .leading)
                     if model.state.detent == .large {
                         extendedNotes(place)
+                        accessRules(place)
+                        if let assessment = ExploreLogic.assessment(for: place, state: model.state) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(assessment.lines, id: \.self) { line in
+                                    Text(line)
+                                        .font(.footnote)
+                                        .foregroundStyle(PawTheme.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        Button(place.isLocalDraft ? "这是本地草稿" : "记下到访观察") {
+                            if !place.isLocalDraft {
+                                model.contributionPlaceID = place.id
+                            }
+                        }
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(PawTheme.cobalt)
+                        .frame(minHeight: 44)
+                        .disabled(place.isLocalDraft)
                     }
                     Button(model.state.detent == .large ? "收起" : "完整说明") {
                         model.setDetent(model.state.detent == .large ? .peek : .large)
@@ -340,6 +360,43 @@ struct ExploreSheet: View {
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
+        }
+    }
+
+    private func accessRules(_ place: Place) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("准入规则")
+                .font(.headline)
+            if place.category == .mall || place.accessRules.contains(where: { $0.topic == .eachStore }) {
+                Text("商场或场地的整体信息，不等于每一家店铺都允许携犬。")
+                    .font(.footnote)
+                    .foregroundStyle(PawTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(place.accessRules, id: \.topic) { rule in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(rule.topic.title)：\(ruleValueTitle(rule.value))")
+                        .font(.subheadline)
+                    Text("\(rule.condition) 来源：\(rule.source)。最后确认：\(rule.lastConfirmedAt == nil ? "没有" : "有记录")。")
+                        .font(.caption)
+                        .foregroundStyle(PawTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PawTheme.mapBackdrop, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func ruleValueTitle(_ value: RuleValue) -> String {
+        switch value {
+        case .unknown: "未知"
+        case .statedAllowed: "有说法称允许，未确认"
+        case .statedRestricted: "有说法称不允许，未确认"
+        case .conflict: "有冲突，未覆盖"
+        case .confirmedAllowed: "已确认允许"
+        case .confirmedRestricted: "已确认不允许"
         }
     }
 

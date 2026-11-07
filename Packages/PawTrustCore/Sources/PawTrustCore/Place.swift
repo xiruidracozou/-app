@@ -75,6 +75,12 @@ public struct Place: Identifiable, Equatable, Hashable, Sendable, Codable {
     public let blurb: String
     /// Sample parks keep this false. The interface has no “verified” legal state.
     public let rulesVerified: Bool
+    public let city: City
+    public let category: PlaceCategory
+    /// Pet-access statements. Sample data stays unknown; example leash/fence/water flags are separate.
+    public let accessRules: [AccessRule]
+    /// A place the person added on this device. It is not a published or reviewed listing.
+    public let isLocalDraft: Bool
 
     public var coordinate: Coordinate {
         Coordinate(latitude: latitude, longitude: longitude)
@@ -91,6 +97,10 @@ public struct Place: Identifiable, Equatable, Hashable, Sendable, Codable {
         }
     }
 
+    public func rule(_ topic: RuleTopic) -> AccessRule? {
+        accessRules.first { $0.topic == topic }
+    }
+
     public init(
         id: String,
         name: String,
@@ -104,7 +114,11 @@ public struct Place: Identifiable, Equatable, Hashable, Sendable, Codable {
         photoName: String,
         exampleDistanceMeters: Int,
         blurb: String,
-        rulesVerified: Bool = false
+        rulesVerified: Bool = false,
+        city: City = .shanghai,
+        category: PlaceCategory = .walking,
+        accessRules: [AccessRule] = [],
+        isLocalDraft: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -119,6 +133,10 @@ public struct Place: Identifiable, Equatable, Hashable, Sendable, Codable {
         self.exampleDistanceMeters = exampleDistanceMeters
         self.blurb = blurb
         self.rulesVerified = rulesVerified
+        self.city = city
+        self.category = category
+        self.accessRules = accessRules
+        self.isLocalDraft = isLocalDraft
     }
 }
 

@@ -1,5 +1,6 @@
 import MapKit
 import SwiftUI
+import UIKit
 import PawTrustCore
 
 enum LocationBanner: Equatable {
@@ -35,30 +36,69 @@ enum LocationBanner: Equatable {
 @MainActor
 @Observable
 final class ExploreModel {
-    private static let favoritesKey = "pawtrust.favorites.v1"
-
     var state: ExploreState
     var camera: MapCameraPosition
     var banner: LocationBanner?
     var routePrompt: RouteHandoff?
+    let channel: BuildChannel
+    var access: MapAccess
+    var profile: DogProfile?
+    var draft: DogProfile
+    var licenseImage: UIImage?
+    var rawOCRLines: [String]
+    var contributions: [LocalContribution]
+    var lastContributionAt: Date?
+    var composerText: String
+    var mapCenter: Coordinate?
+    var statusMessage: String?
+    var contributionPlaceID: String?
+    var showNewPlace = false
+    var showProfile = false
+    var captureToken = UUID()
 
     private let defaults: UserDefaults
     private let location: LocationProvider
 
-    init(defaults: UserDefaults = .standard, location: LocationProvider? = nil) {
+    init(defaults: UserDefaults = .standard, location: LocationProvider? = nil, channel: BuildChannel) {
+        let storedProfile = defaults.data(forKey: StorageKey.profile).flatMap {
+            try? JSONDecoder().decode(DogProfile.self, from: $0)
+        }
+        let storedContributions = defaults.data(forKey: StorageKey.contributions).flatMap {
+            try? JSONDecoder().decode([LocalContribution].self, from: $0)
+        } ?? []
         var initial = ExploreState.initial()
-        if let data = defaults.data(forKey: Self.favoritesKey),
+        let drafts = storedContributions.compactMap { $0.draftPlace() }
+        if !drafts.isEmpty {
+            initial.places = SampleCatalog.places + drafts
+        }
+        if let data = defaults.data(forKey: StorageKey.favorites),
            let snapshot = try? JSONDecoder().decode(FavoriteSnapshot.self, from: data) {
             initial = ExploreLogic.applyingFavorites(snapshot, to: initial)
         }
         self.defaults = defaults
+        self.channel = channel
         self.state = initial
         self.camera = .region(MapRegions.mk(SampleCatalog.initialRegion))
+        self.mapCenter = SampleCatalog.initialRegion.center
+        self.profile = storedProfile
+        self.draft = storedProfile ?? .empty
+        self.rawOCRLines = []
+        self.contributions = storedContributions
+        self.composerText = ""
+        self.access = AccessController.resolvingLaunch(
+            channel: channel,
+            hasProfile: storedProfile?.hasAnyPetFact == true,
+            storedDemoFlag: defaults.bool(forKey: StorageKey.demoAccess)
+        )
         let provider = location ?? LocationProvider()
         self.location = provider
         provider.onEvent = { [weak self] event in
             self?.handle(event)
         }
+    }
+
+    var holdsSensitiveMaterial: Bool {
+        licenseImage != nil || !rawOCRLines.isEmpty
     }
 
     var visiblePlaces: [Place] { ExploreLogic.visiblePlaces(state) }
@@ -199,10 +239,167 @@ final class ExploreModel {
         ))
     }
 
+    func applyComposer(_ text: String) {
+        let previousCity = state.cityFilter
+        composerText = text
+        state = ExploreLogic.applyingComposer(state, text: text)
+        if let profile, state.asksAboutRules {
+            let updated = ProfileLearning.apply(search: state.queryContext, to: profile)
+            if updated != profile {
+                self.profile = updated
+                persistProfile()
+            }
+        }
+        if state.cityFilter != previousCity, let city = state.cityFilter {
+            camera = .region(MapRegions.mk(SampleCatalog.region(for: city)))
+        }
+    }
+
+    func selectCity(_ city: City?) {
+        state = ExploreLogic.settingCity(state, city)
+        guard let city else { return }
+        camera = .region(MapRegions.mk(SampleCatalog.region(for: city)))
+    }
+
+    func removeTopic(_ topic: RuleTopic) {
+        state = ExploreLogic.removingTopic(state, topic)
+    }
+
+    func ingest(_ image: UIImage) async {
+        let token = UUID()
+        captureToken = token
+        licenseImage = image
+        let lines = await OnDeviceTextReader.recognize(image)
+        guard captureToken == token else { return }
+        applyRecognizedLines(lines)
+        licenseImage = nil
+    }
+
+    func applyRecognizedLines(_ lines: [String]) {
+        rawOCRLines = lines
+        let extracted = LicenseExtractor.extract(lines: lines, now: Date()).asProfile()
+        draft.dogName = extracted.dogName
+        draft.breed = extracted.breed
+        draft.sex = extracted.sex
+        draft.ageBand = extracted.ageBand
+        draft.size = extracted.size
+        rawOCRLines = []
+        if extracted.hasAnyPetFact {
+            statusMessage = "只留下了白名单里的犬只字段。主人姓名、证件号、芯片号和原图没有进入档案。"
+        } else {
+            statusMessage = "没有读到品种、性别、年龄段或体型。可以自己填写。原图不会保存。"
+        }
+    }
+
+    func discardSensitiveMaterial() {
+        captureToken = UUID()
+        licenseImage = nil
+        rawOCRLines = []
+    }
+
+    func saveLocalProfile() {
+        guard draft.hasAnyPetFact else {
+            statusMessage = "还没有可保存的犬只字段。"
+            return
+        }
+        profile = draft
+        persistProfile()
+        discardSensitiveMaterial()
+        if !access.showsMap {
+            access = AccessController.afterProfileSaved()
+        }
+        statusMessage = "档案已留在这台设备，可以清除。正式地图仍要等核验结果，保存本身不会解锁。"
+    }
+
+    func clearLocalProfile() {
+        profile = nil
+        draft = .empty
+        defaults.removeObject(forKey: StorageKey.profile)
+        defaults.removeObject(forKey: StorageKey.demoAccess)
+        access = AccessController.initial()
+        showProfile = false
+        discardSensitiveMaterial()
+        statusMessage = "本机犬只档案已清除。相册里的原图不由这个应用删除。"
+    }
+
+    func setLearning(_ enabled: Bool) {
+        draft = draft.settingLearning(enabled)
+        profile = profile?.settingLearning(enabled)
+        if profile != nil { persistProfile() }
+    }
+
+    func requestVerification() {
+        let decision = UnavailableDogLicenseVerifier().evaluate()
+        let hasProfile = profile?.hasAnyPetFact == true
+        if access.showsMap, channel == .debug {
+            statusMessage = DemoCopy.verifierUnavailable
+            return
+        }
+        access = AccessController.afterVerification(decision, hasProfile: hasProfile)
+        statusMessage = DemoCopy.verifierUnavailable
+    }
+
+    func enterExplicitDemo() {
+        let next = AccessController.afterExplicitDemo(
+            channel: channel,
+            hasProfile: profile?.hasAnyPetFact == true
+        )
+        access = next
+        if case .demo = next {
+            defaults.set(true, forKey: StorageKey.demoAccess)
+            statusMessage = DemoCopy.demoBanner
+        } else {
+            defaults.set(false, forKey: StorageKey.demoAccess)
+            statusMessage = "演示入口只在调试构建里、并且已经有本机档案时打开。这不是审核通过。"
+        }
+    }
+
+    func leaveDemo() {
+        defaults.set(false, forKey: StorageKey.demoAccess)
+        access = profile?.hasAnyPetFact == true
+            ? AccessController.afterProfileSaved()
+            : AccessController.initial()
+    }
+
+    func noteMapCenter(_ coordinate: CLLocationCoordinate2D) {
+        mapCenter = Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+    }
+
+    func saveContribution(_ item: LocalContribution) -> String? {
+        let now = Date()
+        guard ContributionThrottle.allow(now: now, last: lastContributionAt) else {
+            return ContributionThrottle.notice
+        }
+        lastContributionAt = now
+        contributions = ContributionThrottle.appending(item, to: contributions)
+        persistContributions()
+        if let draftPlace = item.draftPlace() {
+            state.places.append(draftPlace)
+        }
+        return nil
+    }
+
+    func deleteContribution(_ id: String) {
+        contributions.removeAll { $0.id == id }
+        state.places.removeAll { $0.id == "draft-\(id)" }
+        persistContributions()
+    }
+
+    private func persistProfile() {
+        guard let profile, let data = try? JSONEncoder().encode(profile) else { return }
+        defaults.set(data, forKey: StorageKey.profile)
+    }
+
+    private func persistContributions() {
+        if let data = try? JSONEncoder().encode(contributions) {
+            defaults.set(data, forKey: StorageKey.contributions)
+        }
+    }
+
     private func persistFavorites() {
         let snapshot = FavoriteSnapshot(state: state)
         if let data = try? JSONEncoder().encode(snapshot) {
-            defaults.set(data, forKey: Self.favoritesKey)
+            defaults.set(data, forKey: StorageKey.favorites)
         }
     }
 }

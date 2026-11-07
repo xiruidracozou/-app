@@ -3,18 +3,22 @@ import XCTest
 
 final class CatalogTests: XCTestCase {
     func testSampleParksStayInsideTheOpeningMap() {
-        XCTAssertEqual(SampleCatalog.places.count, 5)
-        XCTAssertEqual(Set(SampleCatalog.places.map(\.id)).count, 5)
+        XCTAssertEqual(Set(SampleCatalog.places.map(\.id)).count, SampleCatalog.places.count)
+        XCTAssertGreaterThan(SampleCatalog.places(in: .shanghai).count, 0)
+        XCTAssertGreaterThan(SampleCatalog.places(in: .shenzhen).count, 0)
+        XCTAssertTrue(SampleCatalog.places.contains { $0.category == .walking })
+        XCTAssertTrue(SampleCatalog.places.contains { $0.category == .dining })
+        XCTAssertTrue(SampleCatalog.places.contains { $0.category == .mall })
         for place in SampleCatalog.places {
-            XCTAssertTrue(
-                SampleCatalog.initialRegion.contains(place.coordinate, insetFraction: 0.05),
-                place.name
-            )
+            let region = SampleCatalog.region(for: place.city)
+            XCTAssertTrue(region.contains(place.coordinate, insetFraction: 0.05), place.name)
             XCTAssertFalse(place.rulesVerified)
             XCTAssertTrue(place.blurb.contains("未核实"))
+            XCTAssertFalse(place.accessRules.contains { $0.value.countsAsSatisfied || $0.value == .statedAllowed })
             XCTAssertFalse(place.photoName.isEmpty)
             XCTAssertGreaterThan(place.exampleDistanceMeters, 0)
         }
+        XCTAssertTrue(SampleCatalog.places.contains { $0.accessRules.contains { $0.topic == .eachStore } })
     }
 
     func testCopyDoesNotClaimALegalConclusion() {
@@ -28,6 +32,10 @@ final class CatalogTests: XCTestCase {
                 DemoCopy.photoExplanation,
                 DemoCopy.attributeNote,
                 DemoCopy.readingGuide,
+                DemoCopy.demoBanner,
+                DemoCopy.verifierUnavailable,
+                DemoCopy.localParseLabel,
+                DemoCopy.retentionSummary,
                 DistanceLabel.exampleNote,
                 DistanceLabel.liveNote,
             ]
@@ -37,7 +45,9 @@ final class CatalogTests: XCTestCase {
             }
         }
         XCTAssertEqual(DemoCopy.unverifiedBadge, "示例地点 · 规则未核实")
-        XCTAssertEqual(DemoCopy.mapCaption, "真实公园位置 · 携犬规则未核实")
+        XCTAssertEqual(DemoCopy.mapCaption, "真实地点位置 · 携犬规则未核实")
+        XCTAssertEqual(DemoCopy.localParseLabel.contains("本地解析"), true)
+        XCTAssertFalse(DemoCopy.localParseLabel.contains("LLM"))
     }
 
     func testDistanceRoundingAndFocusShift() {

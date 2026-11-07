@@ -13,6 +13,7 @@ struct ExploreMapView: View {
                     PawMarker(
                         place: place,
                         selected: model.state.selectedPlaceID == place.id,
+                        dimmed: ExploreLogic.unknownPlaceIDs(model.state).contains(place.id),
                         reduceMotion: reduceMotion
                     ) {
                         model.toggleSelection(place.id)
@@ -26,6 +27,9 @@ struct ExploreMapView: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .onMapCameraChange(frequency: .onEnd) { context in
+            model.noteMapCenter(context.region.center)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("上海示例公园地图")
     }
@@ -42,6 +46,7 @@ struct ExploreMapView: View {
 struct PawMarker: View {
     let place: Place
     let selected: Bool
+    var dimmed = false
     var reduceMotion: Bool
     let action: () -> Void
 
@@ -95,10 +100,11 @@ struct PawMarker: View {
             }
         }
         .buttonStyle(.plain)
+        .opacity(dimmed && !selected ? 0.55 : 1)
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.78), value: selected)
         .accessibilityIdentifier("marker.\(place.id)")
         .accessibilityLabel(selected ? "\(place.name)，已选中" : place.name)
-        .accessibilityHint(selected ? "取消选择" : "查看示例详情")
+        .accessibilityHint(dimmed ? "条件未知，不能当作满足" : (selected ? "取消选择" : "查看示例详情"))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }

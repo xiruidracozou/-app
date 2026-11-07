@@ -8,6 +8,21 @@ struct SearchHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if case .demo(let label) = model.access {
+                HStack {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PawTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("离开演示") { model.leaveDemo() }
+                        .font(.caption.weight(.semibold))
+                        .frame(minHeight: 44)
+                }
+                .padding(12)
+                .pawCard(radius: 16)
+                .padding(.horizontal, 16)
+            }
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 8) {
                     searchField
@@ -59,9 +74,9 @@ struct SearchHeader: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(PawTheme.secondary)
                 .accessibilityHidden(true)
-            TextField("搜索好去处", text: Binding(
-                get: { model.state.query },
-                set: { model.setQuery($0) }
+            TextField("搜索，或说一句话", text: Binding(
+                get: { model.composerText },
+                set: { model.applyComposer($0) }
             ))
             .font(.body)
             .foregroundStyle(PawTheme.ink)
@@ -71,10 +86,10 @@ struct SearchHeader: View {
             .focused($searchFocused)
             .onSubmit { searchFocused = false }
             .accessibilityIdentifier("search.field")
-            .accessibilityLabel("搜索示例地点")
-            if !model.state.query.isEmpty {
+            .accessibilityLabel("搜索示例地点，或说一句话。提交后由本地解析变成筛选，不是语言模型。")
+            if !model.composerText.isEmpty || model.state.asksAboutRules {
                 Button {
-                    model.setQuery("")
+                    model.applyComposer("")
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(PawTheme.secondary)
@@ -108,6 +123,7 @@ struct SearchHeader: View {
         .accessibilityHint("请求定位，并按你的位置排序示例公园")
     }
 
+    @ViewBuilder
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -134,6 +150,59 @@ struct SearchHeader: View {
             .padding(.vertical, 4)
         }
         .accessibilityLabel("示例筛选")
+        if model.state.asksAboutRules || model.state.categoryFilter != nil || !model.state.unmatchedTerms.isEmpty {
+            interpretationTags
+                .padding(.horizontal, 16)
+        }
+        cityChips
+    }
+
+    private var cityChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(title: "全部城市", symbol: "map", selected: model.state.cityFilter == nil, identifier: "city.all") {
+                    model.selectCity(nil)
+                }
+                ForEach(City.allCases, id: \.self) { city in
+                    chip(title: city.title, symbol: "mappin", selected: model.state.cityFilter == city, identifier: "city.\(city.rawValue)") {
+                        model.selectCity(city)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var interpretationTags: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(DemoCopy.localParseLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PawTheme.secondary)
+            if let category = model.state.categoryFilter {
+                Text("类别 · \(category.title)")
+                    .font(.caption)
+            }
+            ForEach(model.state.requiredTopics, id: \.self) { topic in
+                HStack {
+                    Text(topic.title)
+                        .font(.caption.weight(.semibold))
+                    Button("移除") { model.removeTopic(topic) }
+                        .font(.caption.weight(.semibold))
+                        .frame(minHeight: 44)
+                }
+            }
+            if !model.state.unmatchedTerms.isEmpty {
+                Text("没有当成条件：\(model.state.unmatchedTerms.joined(separator: "、"))")
+                    .font(.caption)
+                    .foregroundStyle(PawTheme.secondary)
+            }
+            Text("未知规则不会被当成已经满足。")
+                .font(.caption)
+                .foregroundStyle(PawTheme.secondary)
+        }
+        .padding(12)
+        .pawCard(radius: 16)
     }
 
     private func chip(
