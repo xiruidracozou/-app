@@ -1,0 +1,1982 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>爪印识途 PawTrust — 全屏空间地图原型 (V2 Apple Maps 流体抽屉版)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      /* 极简石板灰毛玻璃视觉系统 (90% 中性色 + 10% 三色语义信号) */
+      --bg-canvas: #090A0D;
+      --glass-surface: rgba(20, 20, 23, 0.80);
+      --glass-elevated: rgba(30, 30, 35, 0.86);
+      --glass-subtle: rgba(255, 255, 255, 0.055);
+      --glass-hover: rgba(255, 255, 255, 0.09);
+      --border-hairline: rgba(255, 255, 255, 0.09);
+      --border-strong: rgba(255, 255, 255, 0.18);
+
+      --text-primary: #F4F4F5;
+      --text-secondary: #A1A1AA;
+      --text-muted: #71717A;
+
+      /* 严格限制仅 3 种语义功能色 */
+      --sig-safe: #10B981;        /* 唯一安全色：已核实 / 围栏放绳 */
+      --sig-safe-bg: rgba(16, 185, 129, 0.14);
+      --sig-warn: #F59E0B;        /* 唯一注意色：必牵绳区 / >90天待复核 / 25°C路面预警 */
+      --sig-warn-bg: rgba(245, 158, 11, 0.14);
+      --sig-danger: #EF4444;      /* 唯一红线色：禁狗公园红线 / 3人已核投毒 / 28°C+禁遛 / 禁养犬 */
+      --sig-danger-bg: rgba(239, 68, 68, 0.16);
+
+      /* Apple Fluid Interfaces 弹簧物理曲线 (参考 nathangitter/fluid-interfaces) */
+      --spring-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", sans-serif;
+      --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-canvas);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 视口容器：默认 100% 全屏沉浸地图，可一键切换 iPhone 16 Pro 极简边框视图 */
+    .app-stage {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #050507;
+      transition: padding 0.45s var(--spring-fluid);
+    }
+
+    .device-viewport {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg-canvas);
+      transition: all 0.45s var(--spring-fluid);
+    }
+
+    /* 当切换为 iPhone 真机框预览态 */
+    .app-stage.iphone-framed {
+      padding: 16px;
+    }
+    .app-stage.iphone-framed .device-viewport {
+      width: 430px;
+      height: min(900px, 95vh);
+      border-radius: 52px;
+      box-shadow:
+        0 0 0 10px #1C1C1F,
+        0 0 0 11px rgba(255,255,255,0.14),
+        0 32px 80px rgba(0,0,0,0.85);
+    }
+
+    /* ==================== L0: 100% 全屏底层空间地图 ==================== */
+    #pawMap {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: #0B0D11;
+    }
+
+    /* 移除 Leaflet 默认杂乱控件 */
+    .leaflet-control-container { display: none; }
+
+    /* Airbnb / Apple Maps 风格极简胶囊锚点 (Map Pill Anchors) */
+    .map-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(18, 18, 21, 0.90);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+      transform: translate(-50%, -50%);
+      transition: transform 0.25s var(--spring-fluid), background 0.2s ease, border-color 0.2s ease;
+      cursor: pointer;
+    }
+
+    .map-pill:hover, .map-pill.selected {
+      transform: translate(-50%, -56%) scale(1.08);
+      z-index: 900 !important;
+      border-color: rgba(255, 255, 255, 0.45);
+    }
+
+    .map-pill .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .map-pill .pill-score {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .map-pill.pill-safe .pill-dot { background: var(--sig-safe); box-shadow: 0 0 8px var(--sig-safe); }
+    .map-pill.pill-safe .pill-score { color: var(--sig-safe); }
+
+    .map-pill.pill-warn .pill-dot { background: var(--sig-warn); }
+    .map-pill.pill-warn .pill-score { color: var(--sig-warn); }
+
+    .map-pill.pill-stale { border-color: rgba(245, 158, 11, 0.45); }
+    .map-pill.pill-stale .pill-dot { background: var(--sig-warn); }
+    .map-pill.pill-stale .pill-score { color: var(--sig-warn); background: var(--sig-warn-bg); }
+
+    .map-pill.pill-ban {
+      background: rgba(40, 14, 16, 0.92);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #FCA5A5;
+    }
+    .map-pill.pill-ban .pill-dot { background: var(--sig-danger); }
+
+    .map-pill.pill-poison {
+      background: rgba(185, 28, 28, 0.95);
+      border-color: #FCA5A5;
+      color: #FFFFFF;
+      animation: pulsePill 1.8s infinite;
+    }
+
+    @keyframes pulsePill {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+      50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    }
+
+    /* ==================== L1: 顶部极简双胶囊 HUD (<8% 屏幕占地) ==================== */
+    .top-hud-bar {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .hud-cluster {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+      flex-wrap: wrap;
+    }
+
+    .glass-capsule {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: var(--glass-surface);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+      transition: all 0.25s var(--spring-fluid);
+      white-space: nowrap;
+    }
+
+    .glass-capsule:hover {
+      background: var(--glass-elevated);
+      border-color: var(--border-strong);
+    }
+
+    .glass-capsule:active {
+      transform: scale(0.96);
+    }
+
+    .glass-capsule.capsule-warn {
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #FDE68A;
+    }
+
+    .glass-capsule.capsule-danger {
+      background: rgba(127, 29, 29, 0.88);
+      border-color: rgba(239, 68, 68, 0.65);
+      color: #FECACA;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--sig-safe);
+    }
+    .status-dot.warn { background: var(--sig-warn); }
+    .status-dot.danger { background: var(--sig-danger); box-shadow: 0 0 8px var(--sig-danger); }
+
+    /* 右侧地图轻量工具按钮（底图切换、区域图例、真机框切换） */
+    .map-side-controls {
+      position: absolute;
+      right: 16px;
+      top: 68px;
+      z-index: 950;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .icon-btn-glass {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--glass-surface);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s var(--spring-fluid), border-color 0.2s ease;
+    }
+
+    .icon-btn-glass:hover {
+      border-color: var(--border-strong);
+      transform: scale(1.05);
+    }
+
+    /* 地图左下角极简区域色彩图例胶囊（只解释3种颜色区域） */
+    .spatial-zone-legend {
+      position: absolute;
+      left: 16px;
+      top: 68px;
+      z-index: 950;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(16, 16, 19, 0.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      pointer-events: auto;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .zone-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+    .swatch-safe { background: rgba(16, 185, 129, 0.35); border: 1.5px solid var(--sig-safe); }
+    .swatch-warn { background: rgba(245, 158, 11, 0.22); border: 1.5px dashed var(--sig-warn); }
+    .swatch-danger { background: rgba(239, 68, 68, 0.28); border: 1.5px solid var(--sig-danger); }
+
+    /* ==================== 顶部下拉浮层 Popover (城市合规 / AI 热力学详情) ==================== */
+    .floating-popover {
+      position: absolute;
+      top: 62px;
+      left: 16px;
+      width: min(380px, calc(100vw - 32px));
+      max-height: 72vh;
+      overflow-y: auto;
+      padding: 16px;
+      border-radius: 24px;
+      background: rgba(22, 22, 26, 0.92);
+      backdrop-filter: blur(36px) saturate(190%);
+      -webkit-backdrop-filter: blur(36px) saturate(190%);
+      border: 1px solid var(--border-strong);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+      z-index: 1300;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      animation: popIn 0.26s var(--spring-fluid);
+    }
+
+    .floating-popover.open {
+      display: flex;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* ==================== L2 & L3: Apple Maps 三段式阻尼抽屉 (BottomSheet) ==================== */
+    /* 参考 GitHub: Wouter125/BottomSheet & nathangitter/fluid-interfaces */
+    .apple-bottom-sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin: 0 auto;
+      width: 100%;
+      max-width: 520px;
+      height: 85vh;
+      background: rgba(18, 18, 22, 0.86);
+      backdrop-filter: blur(40px) saturate(190%);
+      -webkit-backdrop-filter: blur(40px) saturate(190%);
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 28px 28px 0 0;
+      box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.65);
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      /* 三段位通过 translateY 控制：
+         detent-peek: 仅露头 168px (让出 80%+ 地图)
+         detent-half: 半屏 45vh
+         detent-full: 展开 85vh */
+      transform: translateY(calc(85vh - 172px));
+      transition: transform 0.48s var(--spring-fluid);
+      will-change: transform;
+    }
+
+    .apple-bottom-sheet.detent-peek {
+      transform: translateY(calc(85vh - 172px));
+    }
+    .apple-bottom-sheet.detent-half {
+      transform: translateY(calc(85vh - 46vh));
+    }
+    .apple-bottom-sheet.detent-full {
+      transform: translateY(0);
+    }
+
+    /* 抽屉顶部拖拽把手区 */
+    .sheet-drag-header {
+      padding: 10px 18px 8px;
+      cursor: grab;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .sheet-drag-header:active { cursor: grabbing; }
+
+    .sheet-grabber {
+      width: 38px;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .sheet-header-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .sheet-search-box {
+      flex: 1;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-size: 13px;
+      outline: none;
+    }
+    .sheet-search-box:focus {
+      border-color: rgba(255, 255, 255, 0.28);
+      background: rgba(255, 255, 255, 0.10);
+    }
+
+    .detent-toggle-pill {
+      padding: 6px 10px;
+      border-radius: 9px;
+      background: var(--glass-subtle);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* 极简横向筛选胶囊 */
+    .sheet-filter-strip {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 2px 18px 10px;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    .sheet-filter-strip::-webkit-scrollbar { display: none; }
+
+    .filter-chip {
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--glass-subtle);
+      border: 1px solid transparent;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .filter-chip.active {
+      background: var(--text-primary);
+      color: #090A0D;
+      font-weight: 600;
+    }
+
+    /* 抽屉滚动内容区 */
+    .sheet-scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 18px 110px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ==================== L2: 严控 3 行的极简地点卡片 (拒绝信息轰炸) ==================== */
+    .spot-row-card {
+      padding: 13px 15px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s var(--spring-fluid);
+    }
+
+    .spot-row-card:hover {
+      background: var(--glass-hover);
+      border-color: var(--border-strong);
+    }
+
+    .spot-row-card:active {
+      transform: scale(0.985);
+    }
+
+    /* 第 1 行：类型圆点 + 地点名 + 右侧可信度徽章 */
+    .row-line-1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .row-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .row-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .trust-badge {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .trust-badge.safe { background: var(--sig-safe-bg); color: var(--sig-safe); }
+    .trust-badge.warn { background: var(--sig-warn-bg); color: var(--sig-warn); }
+    .trust-badge.danger { background: var(--sig-danger-bg); color: var(--sig-danger); }
+
+    /* 第 2 行：空间规则一句话 */
+    .row-line-2 {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 第 3 行：极简微指标 */
+    .row-line-3 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      padding-top: 2px;
+    }
+
+    .micro-tags {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ==================== L3: 二级详情与 Bento 格 (点击卡片后渐进展开) ==================== */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .bento-cell {
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .bento-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .bento-val {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* 到场核实三态按钮 */
+    .verify-vote-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .vote-pill-btn {
+      padding: 11px 8px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-size: 12.5px;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      transition: all 0.2s var(--spring-fluid);
+    }
+
+    .vote-pill-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-strong);
+    }
+
+    .vote-pill-btn:active { transform: scale(0.96); }
+
+    /* ==================== 底部极简悬浮胶囊 Dock ==================== */
+    .floating-dock {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1200;
+      padding: 5px;
+      border-radius: 999px;
+      background: rgba(16, 16, 20, 0.88);
+      backdrop-filter: blur(32px) saturate(190%);
+      -webkit-backdrop-filter: blur(32px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .dock-item {
+      padding: 8px 15px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.25s var(--spring-fluid);
+      white-space: nowrap;
+      position: relative;
+    }
+
+    .dock-item.active {
+      background: var(--text-primary);
+      color: #090A0D;
+    }
+
+    .dock-dot-badge {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--sig-danger);
+    }
+
+    /* 通用表单控件（保持极简克制） */
+    .clean-input, .clean-select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    .clean-select option { background: #18181B; color: #F4F4F5; }
+
+    .btn-primary-clean {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: none;
+      background: var(--text-primary);
+      color: #090A0D;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s var(--spring-fluid), opacity 0.2s ease;
+    }
+    .btn-primary-clean:active { transform: scale(0.98); }
+
+    /* 顶部轻量 SPIndicator 风格胶囊通知 (参考 ivanvorobei/SPIndicator) */
+    .sp-indicator-toast {
+      position: fixed;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      padding: 9px 18px;
+      border-radius: 999px;
+      background: rgba(24, 24, 28, 0.96);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      font-size: 12.5px;
+      font-weight: 600;
+      z-index: 3000;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.42s var(--spring-fluid);
+      pointer-events: none;
+    }
+    .sp-indicator-toast.visible {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 底部极简合规微水印（不抢视觉，但严守第11节声明要求） */
+    .subtle-legal-watermark {
+      position: absolute;
+      bottom: 3px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1050;
+      font-size: 10px;
+      color: rgba(161, 161, 170, 0.45);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SPIndicator 风格原生顶部胶囊轻提示 -->
+  <div id="spToast" class="sp-indicator-toast">
+    <span id="spToastDot" class="status-dot"></span>
+    <span id="spToastText">已更新</span>
+  </div>
+
+  <main id="appStage" class="app-stage">
+    <div class="device-viewport">
+
+      <!-- ==================== L0: 100% 全屏空间地图画布 ==================== -->
+      <div id="pawMap"></div>
+
+      <!-- 地图左上角：极简空间区域色彩图例 -->
+      <div class="spatial-zone-legend">
+        <span class="legend-item"><i class="zone-swatch swatch-safe"></i>围栏可放绳区</span>
+        <span class="legend-item"><i class="zone-swatch swatch-warn"></i>必须牵绳区</span>
+        <span class="legend-item"><i class="zone-swatch swatch-danger"></i>禁狗红线 / 投毒圈</span>
+      </div>
+
+      <!-- 地图右侧：轻量工具按钮（底图日夜切换、定位回中、真机框切换） -->
+      <div class="map-side-controls">
+        <button class="icon-btn-glass" title="切换深色/浅色地图底图" onclick="toggleMapTheme()">◐</button>
+        <button class="icon-btn-glass" title="视野回到当前城市中心" onclick="resetCityCamera()">⌖</button>
+        <button class="icon-btn-glass" title="切换全屏 / iPhone 16 Pro 边框" onclick="toggleFrameMode()">📱</button>
+      </div>
+
+      <!-- ==================== L1: 顶部极简双胶囊 HUD ==================== -->
+      <header class="top-hud-bar">
+        <!-- 左胶囊：城市与一城一策合规入口 (6.1 + 6.6) -->
+        <div class="hud-cluster">
+          <div id="cityHudCapsule" class="glass-capsule" onclick="togglePopover('cityPopover')">
+            <span class="status-dot"></span>
+            <span id="hudCityName">深圳</span>
+            <span id="hudCityRule" style="color:var(--text-secondary); font-weight:500; font-size:12px;">限绳 1.5m</span>
+            <span style="color:var(--text-muted); font-size:10px;">▾</span>
+          </div>
+        </div>
+
+        <!-- 右胶囊组：AI 路面温度微胶囊 (6.7) + 3人确认高危投毒胶囊 (6.5) -->
+        <div class="hud-cluster">
+          <div id="thermalHudCapsule" class="glass-capsule" onclick="togglePopover('thermalPopover')">
+            <span id="thermalDot" class="status-dot warn"></span>
+            <span id="hudTempText">26°C · 路面 54°C</span>
+          </div>
+
+          <div id="poisonHudCapsule" class="glass-capsule capsule-danger" onclick="openDrawerMode('alerts')">
+            <span class="status-dot danger"></span>
+            <span id="hudPoisonText">1 处高危预警</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- 顶部下拉 Popover 1：城市切换与一城一策法规摘要 (6.6) -->
+      <div id="cityPopover" class="floating-popover">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px; font-weight:700;">切换城市（一城一策合规引擎）</span>
+          <span style="font-size:11px; color:var(--text-muted); cursor:pointer;" onclick="closeAllPopovers()">关闭 ✕</span>
+        </div>
+        <div id="cityPopoverGrid" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+        <div id="cityComplianceSummary" style="padding:12px; border-radius:16px; background:var(--glass-subtle); border:1px solid var(--border-hairline); font-size:12px; line-height:1.55; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
+      <!-- 顶部下拉 Popover 2：AI 地面热力学与爪垫安全仪 (6.7) -->
+      <div id="thermalPopover" class="floating-popover" style="left:auto; right:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px; font-weight:700;">🌡️ AI 地面温度与爪垫安全测算</span>
+          <span style="font-size:11px; color:var(--text-muted); cursor:pointer;" onclick="closeAllPopovers()">关闭 ✕</span>
+        </div>
+        <div id="thermalCardBody" style="padding:12px; border-radius:16px; background:var(--glass-subtle); border:1px solid var(--border-hairline); display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <div>
+              <div style="font-size:11px; color:var(--text-muted);">当前气温</div>
+              <div id="popAirTemp" style="font-size:22px; font-weight:700; font-family:var(--font-mono);">26°C</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:11px; color:var(--text-muted);">日照柏油路估算</div>
+              <div id="popRoadTemp" style="font-size:22px; font-weight:700; font-family:var(--font-mono); color:var(--sig-warn);">54°C</div>
+            </div>
+          </div>
+          <div id="popThermalAdvice" style="font-size:12px; color:var(--text-secondary); line-height:1.45;">
+            25°C 气温下路面可达 52°C，接触 60 秒即可烫伤狗爪；28°C 以上为危险区间，系统将拦截户外遛狗推荐。
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:var(--text-secondary);">
+          <span>模拟气温调节</span>
+          <input type="range" id="tempSlider" min="16" max="36" value="26" style="flex:1; accent-color:var(--text-primary);" oninput="onTempChange(this.value)" />
+          <button class="detent-toggle-pill" onclick="syncOpenMeteoWeather()">同步实况</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--text-muted);">
+          注：该功能为安全提示，不可替代兽医建议。数据直连免密钥 Open-Meteo API。
+        </div>
+      </div>
+
+      <!-- ==================== L2 & L3: Apple Maps 三段式阻尼抽屉 ==================== -->
+      <section id="bottomSheet" class="apple-bottom-sheet detent-half">
+        <!-- 顶部拖拽手势区 -->
+        <div id="sheetDragHeader" class="sheet-drag-header">
+          <div class="sheet-grabber"></div>
+          <div class="sheet-header-bar">
+            <input
+              id="spotSearchInput"
+              type="text"
+              class="sheet-search-box"
+              placeholder="搜索地点、河岸绿道、宠物公园..."
+              onfocus="setSheetDetent('half')"
+              oninput="renderDiscoveryList()"
+            />
+            <button id="detentBtn" class="detent-toggle-pill" onclick="cycleSheetDetent()">半屏 ↕</button>
+          </div>
+        </div>
+
+        <!-- 极简分类筛选条 (仅在「探索」模式下显示) -->
+        <div id="sheetFilterStrip" class="sheet-filter-strip">
+          <div class="filter-chip active" data-filter="all" onclick="setSpotFilter('all', this)">全部</div>
+          <div class="filter-chip" data-filter="fenced_only" onclick="setSpotFilter('fenced_only', this)">围栏可放绳</div>
+          <div class="filter-chip" data-filter="non_park_green" onclick="setSpotFilter('non_park_green', this)">非公园绿地</div>
+          <div class="filter-chip" data-filter="pet_park" onclick="setSpotFilter('pet_park', this)">指定宠物公园</div>
+          <div class="filter-chip" data-filter="pet_merchant" onclick="setSpotFilter('pet_merchant', this)">友好商家</div>
+          <div class="filter-chip" data-filter="needs_reverify" onclick="setSpotFilter('needs_reverify', this)">>90天待复核</div>
+          <div class="filter-chip" data-filter="pending_2_votes" onclick="setSpotFilter('pending_2_votes', this)">待核实 (1/2)</div>
+          <div class="filter-chip" data-filter="banned_park" onclick="setSpotFilter('banned_park', this)">禁狗公园对照</div>
+        </div>
+
+        <!-- 抽屉动态内容容器（承载：L2 精简3行列表 / L3 地点二级详情 / 发布表单 / 投毒雷达 / 数字犬证 / 演示调测） -->
+        <div id="sheetBody" class="sheet-scroll-body"></div>
+      </section>
+
+      <!-- ==================== 底部极简悬浮胶囊 Dock ==================== -->
+      <nav class="floating-dock">
+        <div class="dock-item active" data-mode="discover" onclick="openDrawerMode('discover')">
+          <span>探索</span>
+        </div>
+        <div class="dock-item" data-mode="publish" onclick="openDrawerMode('publish')">
+          <span>＋ 发布</span>
+        </div>
+        <div class="dock-item" data-mode="alerts" onclick="openDrawerMode('alerts')">
+          <span>预警</span>
+          <span id="dockAlertDot" class="dock-dot-badge"></span>
+        </div>
+        <div class="dock-item" data-mode="license" onclick="openDrawerMode('license')">
+          <span id="dockLicenseLabel">持证卡</span>
+        </div>
+        <div class="dock-item" data-mode="demo" onclick="openDrawerMode('demo')">
+          <span>调测</span>
+        </div>
+      </nav>
+
+      <div class="subtle-legal-watermark">
+        演示数据、未核实、不能当法律依据 · 高温提示不可替代兽医建议
+      </div>
+
+    </div>
+  </main>
+
+  <script src="pawtrust-data.js"></script>
+  <script>
+    // ==================== 全局状态机 ====================
+    const state = {
+      currentCity: "shenzhen",
+      drawerMode: "discover", // discover | spot_detail | publish | alerts | license | demo
+      selectedSpotId: null,
+      spotFilter: "all",
+      alertFilter: "all",
+      detent: "half", // peek | half | full
+      darkMap: true,
+      isLicenseVerified: true,
+      currentDog: { ...window.PAWTRUST_DATA.licensePresets.compliant_corgi },
+      envTempC: 26,
+      envHumidity: 74,
+      map: null,
+      tileLayer: null,
+      zoneLayer: null
+    };
+
+    // ==================== SPIndicator 风格原生胶囊轻提示 ====================
+    function notify(text, level = "safe") {
+      const toast = document.getElementById("spToast");
+      const dot = document.getElementById("spToastDot");
+      const txt = document.getElementById("spToastText");
+      dot.className = "status-dot" + (level === "danger" ? " danger" : level === "warn" ? " warn" : "");
+      txt.textContent = text;
+      toast.classList.add("visible");
+      clearTimeout(window.__spTimer);
+      window.__spTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+    }
+
+    // ==================== 初始化地图与手势抽屉 ====================
+    window.addEventListener("DOMContentLoaded", () => {
+      initMap();
+      initSheetDragGestures();
+      selectCity("shenzhen", false);
+    });
+
+    function initMap() {
+      const c = window.PAWTRUST_DATA.cities[state.currentCity];
+      state.map = L.map("pawMap", {
+        zoomControl: false,
+        attributionControl: false
+      }).setView(c.center, c.zoom);
+
+      setBaseTileLayer(true);
+      state.zoneLayer = L.layerGroup().addTo(state.map);
+
+      // 点击空白地图时，自动将抽屉收起至 Peek 露头态，还给用户 85% 全屏大地图视野！
+      state.map.on("click", () => {
+        closeAllPopovers();
+        if (state.detent === "full") {
+          setSheetDetent("half");
+        } else if (state.detent === "half" && state.drawerMode === "discover") {
+          setSheetDetent("peek");
+        }
+      });
+    }
+
+    function setBaseTileLayer(isDark) {
+      if (state.tileLayer) state.map.removeLayer(state.tileLayer);
+      const url = isDark
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+      state.tileLayer = L.tileLayer(url, { maxZoom: 19, subdomains: "abcd" }).addTo(state.map);
+    }
+
+    function toggleMapTheme() {
+      state.darkMap = !state.darkMap;
+      setBaseTileLayer(state.darkMap);
+      notify(state.darkMap ? "已切换至深色空间底图" : "已切换至浅色极简底图");
+    }
+
+    function toggleFrameMode() {
+      document.getElementById("appStage").classList.toggle("iphone-framed");
+      setTimeout(() => state.map && state.map.invalidateSize(), 460);
+    }
+
+    function resetCityCamera() {
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      state.map.flyTo(city.center, city.zoom, { duration: 0.8 });
+      setSheetDetent("peek");
+    }
+
+    // ==================== Apple Maps 三段式抽屉手势与弹簧控制 ====================
+    function setSheetDetent(detent) {
+      state.detent = detent;
+      const sheet = document.getElementById("bottomSheet");
+      const btn = document.getElementById("detentBtn");
+      sheet.classList.remove("detent-peek", "detent-half", "detent-full");
+      sheet.classList.add(`detent-${detent}`);
+      const labelMap = { peek: "展开 ↑", half: "半屏 ↕", full: "收起 ↓" };
+      if (btn) btn.textContent = labelMap[detent];
+    }
+
+    function cycleSheetDetent() {
+      const order = ["peek", "half", "full"];
+      const next = order[(order.indexOf(state.detent) + 1) % order.length];
+      setSheetDetent(next);
+    }
+
+    function initSheetDragGestures() {
+      const header = document.getElementById("sheetDragHeader");
+      let startY = 0;
+      let isDragging = false;
+
+      header.addEventListener("pointerdown", e => {
+        if (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON") return;
+        startY = e.clientY;
+        isDragging = true;
+      });
+
+      window.addEventListener("pointerup", e => {
+        if (!isDragging) return;
+        isDragging = false;
+        const deltaY = e.clientY - startY;
+        if (deltaY < -40) {
+          setSheetDetent(state.detent === "peek" ? "half" : "full");
+        } else if (deltaY > 40) {
+          setSheetDetent(state.detent === "full" ? "half" : "peek");
+        }
+      });
+    }
+
+    // ==================== 城市切换与顶部双胶囊 HUD 更新 ====================
+    function selectCity(cityId, showToastMsg = true) {
+      state.currentCity = cityId;
+      state.selectedSpotId = null;
+      const city = window.PAWTRUST_DATA.cities[cityId];
+
+      state.envTempC = city.defaultTemp;
+      state.envHumidity = city.defaultHumidity;
+      const slider = document.getElementById("tempSlider");
+      if (slider) slider.value = state.envTempC;
+
+      document.getElementById("hudCityName").textContent = city.name;
+      document.getElementById("hudCityRule").textContent = city.leashShort;
+
+      if (state.map) {
+        state.map.flyTo(city.center, city.zoom, { duration: 0.9 });
+      }
+
+      renderCityPopover();
+      updateThermalState();
+      updatePoisonHudState();
+      renderSpatialMapLayers();
+      if (state.drawerMode === "spot_detail") state.drawerMode = "discover";
+      renderCurrentDrawer();
+
+      if (showToastMsg) {
+        notify(`已切换至 ${city.name} · ${city.leashShort}`);
+      }
+    }
+
+    function togglePopover(id) {
+      const el = document.getElementById(id);
+      const isOpen = el.classList.contains("open");
+      closeAllPopovers();
+      if (!isOpen) el.classList.add("open");
+    }
+
+    function closeAllPopovers() {
+      document.querySelectorAll(".floating-popover").forEach(p => p.classList.remove("open"));
+    }
+
+    function renderCityPopover() {
+      const grid = document.getElementById("cityPopoverGrid");
+      const summary = document.getElementById("cityComplianceSummary");
+      grid.innerHTML = "";
+
+      Object.values(window.PAWTRUST_DATA.cities).forEach(c => {
+        const chip = document.createElement("button");
+        chip.className = `filter-chip ${c.id === state.currentCity ? "active" : ""}`;
+        chip.textContent = c.id === "hongkong" ? "🇭🇰 香港 (Phase 2)" : c.name;
+        chip.onclick = () => {
+          selectCity(c.id);
+          closeAllPopovers();
+        };
+        grid.appendChild(chip);
+      });
+
+      const curr = window.PAWTRUST_DATA.cities[state.currentCity];
+      summary.innerHTML = `
+        <div style="color:var(--text-primary); font-weight:600;">${curr.name}养犬合规要点（一城一策）</div>
+        <div>• <strong>牵绳规定：</strong>${curr.compliance.leashRule}</div>
+        <div>• <strong>公园禁令口径：</strong>${curr.compliance.parkBanRule}</div>
+        <div>• <strong>禁养烈性犬（${curr.compliance.bannedBreedsCount}种）：</strong>${curr.compliance.bannedBreedsSample.slice(0, 6).join("、")}等</div>
+        <div>• <strong>处罚红线：</strong>${curr.compliance.penalties[0]}</div>
+        <div style="font-size:10.5px; color:var(--sig-warn); margin-top:2px;">⚠️ 原型规则为演示数据，未经核实，不能作为法律依据。</div>
+      `;
+    }
+
+    // ==================== 6.7 AI 高温与柏油路烫爪测算 ====================
+    function calcAsphaltTemp(airC) {
+      return airC >= 25 ? Math.round(52 + (airC - 25) * 1.8) : Math.round(airC + Math.max(0, (airC - 10) * 1.1));
+    }
+
+    function onTempChange(val) {
+      state.envTempC = parseInt(val, 10);
+      updateThermalState();
+      if (state.drawerMode === "discover" || state.drawerMode === "spot_detail") {
+        renderCurrentDrawer();
+      }
+    }
+
+    function updateThermalState() {
+      const air = state.envTempC;
+      const road = calcAsphaltTemp(air);
+      const capsule = document.getElementById("thermalHudCapsule");
+      const dot = document.getElementById("thermalDot");
+      const text = document.getElementById("hudTempText");
+
+      document.getElementById("popAirTemp").textContent = `${air}°C`;
+      const roadEl = document.getElementById("popRoadTemp");
+      roadEl.textContent = `${road}°C`;
+
+      capsule.classList.remove("capsule-warn", "capsule-danger");
+      dot.className = "status-dot";
+
+      if (air >= 28) {
+        capsule.classList.add("capsule-danger");
+        dot.classList.add("danger");
+        text.textContent = `🚨 ${air}°C · 禁遛 (${road}°C路面)`;
+        roadEl.style.color = "var(--sig-danger)";
+        document.getElementById("popThermalAdvice").innerHTML = `<strong style="color:var(--sig-danger);">28°C+ 危险区间：请勿外出遛狗！</strong>当前柏油路高达 ${road}°C，60秒内即可烫伤狗爪垫。户外地点推荐已自动锁定，仅展示室内空调友好商家。`;
+      } else if (air >= 25) {
+        capsule.classList.add("capsule-warn");
+        dot.classList.add("warn");
+        text.textContent = `${air}°C · 路面 ${road}°C`;
+        roadEl.style.color = "var(--sig-warn)";
+        document.getElementById("popThermalAdvice").innerHTML = `<strong style="color:var(--sig-warn);">地面高温预警：</strong>25°C+ 气温下路面达 ${road}°C（60秒即可烫伤狗爪），建议仅前往高遮阴草地或室内友好店。`;
+      } else {
+        text.textContent = `${air}°C · 适宜遛狗`;
+        roadEl.style.color = "var(--sig-safe)";
+        document.getElementById("popThermalAdvice").textContent = `当前路面约 ${road}°C，气候适宜出行。系统已结合「${state.currentDog.dogName}」体型与遮阴率为您排序。`;
+      }
+    }
+
+    async function syncOpenMeteoWeather() {
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      const [lat, lng] = city.center;
+      notify(`正在同步 ${city.name} Open-Meteo 实时天气...`);
+      try {
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m`);
+        const data = await res.json();
+        if (data?.current) {
+          state.envTempC = Math.round(data.current.temperature_2m);
+          document.getElementById("tempSlider").value = Math.min(36, Math.max(16, state.envTempC));
+          updateThermalState();
+          renderCurrentDrawer();
+          notify(`已同步 ${city.name} 实时气温 ${state.envTempC}°C`);
+        }
+      } catch {
+        notify(`已使用 ${city.name} 预设气象 (${state.envTempC}°C)`, "warn");
+      }
+    }
+
+    function updatePoisonHudState() {
+      const cap = document.getElementById("poisonHudCapsule");
+      const txt = document.getElementById("hudPoisonText");
+      const dot = document.getElementById("dockAlertDot");
+
+      const confirmed = window.PAWTRUST_DATA.alerts.filter(
+        a => a.city === state.currentCity && a.status === "confirmed" && a.confirmCount >= 3
+      );
+
+      if (confirmed.length > 0) {
+        cap.style.display = "inline-flex";
+        txt.textContent = `${confirmed.length} 处高危投毒预警`;
+        if (dot) dot.style.display = "block";
+      } else {
+        cap.style.display = "none";
+        if (dot) dot.style.display = "none";
+      }
+    }
+
+    // ==================== 核心亮点：在地图上直接绘制「区域多边形 (Polygon)」与「胶囊锚点」 ====================
+    function renderSpatialMapLayers() {
+      if (!state.zoneLayer) return;
+      state.zoneLayer.clearLayers();
+
+      const spots = getFilteredSpotsForCurrentCity();
+
+      spots.forEach(spot => {
+        // 1. 绘制空间区域多边形 (Polygon Zones) — 让用户一眼区分围栏放绳区、牵绳走廊、普通公园禁狗红线区
+        if (spot.zones && spot.zones.length > 0) {
+          spot.zones.forEach(z => {
+            let style = {};
+            if (z.type === "offleash") {
+              style = {
+                color: "#10B981",
+                weight: 2,
+                fillColor: "#10B981",
+                fillOpacity: 0.20
+              };
+            } else if (z.type === "onleash") {
+              style = {
+                color: "#F59E0B",
+                weight: 1.8,
+                dashArray: "6, 6",
+                fillColor: "#F59E0B",
+                fillOpacity: 0.11
+              };
+            } else if (z.type === "banned") {
+              style = {
+                color: "#EF4444",
+                weight: 2,
+                fillColor: "#EF4444",
+                fillOpacity: 0.24
+              };
+            }
+            const poly = L.polygon(z.coords, style).addTo(state.zoneLayer);
+            poly.on("click", e => {
+              L.DomEvent.stopPropagation(e);
+              openSpotDetail(spot.id);
+            });
+          });
+        }
+
+        // 2. 绘制极简 Apple Maps / Airbnb 胶囊气泡锚点 (Map Pill Anchor)
+        const isStale = spot.daysSinceVerified > 90 || spot.status === "needs_reverify";
+        const isBanned = spot.category === "banned_park";
+        const isPending = spot.status === "pending_2_votes" || spot.verifyCount < 2;
+
+        let pillClass = "pill-safe";
+        let badgeText = `${spot.trustScore}`;
+
+        if (isBanned) {
+          pillClass = "pill-ban";
+          badgeText = "禁犬";
+        } else if (isStale) {
+          pillClass = "pill-stale";
+          badgeText = "待复核";
+        } else if (isPending) {
+          pillClass = "pill-warn";
+          badgeText = "1/2待核";
+        } else if (spot.leashStatus === "onleash_required") {
+          pillClass = "pill-warn";
+          badgeText = `牵绳 · ${spot.trustScore}`;
+        } else {
+          pillClass = "pill-safe";
+          badgeText = `放绳 · ${spot.trustScore}`;
+        }
+
+        const isSelected = state.selectedSpotId === spot.id;
+        const html = `
+          <div class="map-pill ${pillClass} ${isSelected ? "selected" : ""}">
+            <span class="pill-dot"></span>
+            <span>${spot.shortName || spot.name.slice(0, 7)}</span>
+            <span class="pill-score">${badgeText}</span>
+          </div>
+        `;
+
+        const icon = L.divIcon({ className: "", html, iconSize: [0, 0] });
+        const marker = L.marker([spot.lat, spot.lng], { icon }).addTo(state.zoneLayer);
+        marker.on("click", e => {
+          L.DomEvent.stopPropagation(e);
+          openSpotDetail(spot.id);
+        });
+      });
+
+      // 3. 绘制已满 3 人交叉确认的投毒高危脉冲半径圈 (Radius Circle)
+      window.PAWTRUST_DATA.alerts
+        .filter(a => a.city === state.currentCity && a.status === "confirmed" && a.confirmCount >= 3)
+        .forEach(alert => {
+          L.circle([alert.lat, alert.lng], {
+            radius: alert.radiusMeters || 400,
+            color: "#EF4444",
+            weight: 1.5,
+            fillColor: "#EF4444",
+            fillOpacity: 0.22
+          }).addTo(state.zoneLayer);
+
+          const alertPill = L.divIcon({
+            className: "",
+            html: `<div class="map-pill pill-poison"><span>🚨 疑似投毒 · ${alert.confirmCount}人已核</span></div>`,
+            iconSize: [0, 0]
+          });
+          const m = L.marker([alert.lat, alert.lng], { icon: alertPill }).addTo(state.zoneLayer);
+          m.on("click", e => {
+            L.DomEvent.stopPropagation(e);
+            openDrawerMode("alerts");
+          });
+        });
+    }
+
+    function getFilteredSpotsForCurrentCity() {
+      const q = (document.getElementById("spotSearchInput")?.value || "").trim().toLowerCase();
+      let list = window.PAWTRUST_DATA.spots.filter(s => s.city === state.currentCity);
+
+      if (state.spotFilter === "fenced_only") {
+        list = list.filter(s => s.leashStatus === "fenced_offleash" && s.status !== "pending_2_votes");
+      } else if (["non_park_green", "pet_park", "pet_merchant", "banned_park"].includes(state.spotFilter)) {
+        list = list.filter(s => s.category === state.spotFilter);
+      } else if (state.spotFilter === "needs_reverify") {
+        list = list.filter(s => s.daysSinceVerified > 90 || s.status === "needs_reverify");
+      } else if (state.spotFilter === "pending_2_votes") {
+        list = list.filter(s => s.status === "pending_2_votes" || s.verifyCount < 2);
+      } else {
+        // 默认公开视图：不将未满2人核实的地点直接混入公开列表（严格执行 6.2）
+        list = list.filter(s => s.status !== "pending_2_votes");
+      }
+
+      if (q) {
+        list = list.filter(s =>
+          s.name.toLowerCase().includes(q) ||
+          s.address.toLowerCase().includes(q) ||
+          s.oneLineRule.toLowerCase().includes(q)
+        );
+      }
+      return list;
+    }
+
+    // ==================== 抽屉路由与渐进式信息披露 ====================
+    function openDrawerMode(mode) {
+      closeAllPopovers();
+      state.drawerMode = mode;
+      if (mode !== "spot_detail") state.selectedSpotId = null;
+
+      document.querySelectorAll(".floating-dock .dock-item").forEach(el => {
+        el.classList.toggle("active", el.dataset.mode === (mode === "spot_detail" ? "discover" : mode));
+      });
+
+      const filterStrip = document.getElementById("sheetFilterStrip");
+      if (filterStrip) {
+        filterStrip.style.display = mode === "discover" ? "flex" : "none";
+      }
+
+      if (mode === "discover") {
+        if (state.detent === "peek") setSheetDetent("half");
+      } else {
+        setSheetDetent("half");
+      }
+
+      renderSpatialMapLayers();
+      renderCurrentDrawer();
+    }
+
+    function renderCurrentDrawer() {
+      switch (state.drawerMode) {
+        case "discover":
+          renderDiscoveryList();
+          break;
+        case "spot_detail":
+          renderSpotDetailView();
+          break;
+        case "publish":
+          renderPublishView();
+          break;
+        case "alerts":
+          renderAlertsView();
+          break;
+        case "license":
+          renderLicenseView();
+          break;
+        case "demo":
+          renderDemoControlView();
+          break;
+      }
+    }
+
+    function setSpotFilter(filterKey, el) {
+      state.spotFilter = filterKey;
+      document.querySelectorAll("#sheetFilterStrip .filter-chip").forEach(c => c.classList.remove("active"));
+      if (el) el.classList.add("active");
+      renderSpatialMapLayers();
+      renderDiscoveryList();
+    }
+
+    // ==================== L2: 严控 3 行的精简地点列表 (呼吸感排版) ====================
+    function renderDiscoveryList() {
+      const body = document.getElementById("sheetBody");
+      const list = getFilteredSpotsForCurrentCity();
+      body.innerHTML = "";
+
+      if (state.envTempC >= 28) {
+        const warnBanner = document.createElement("div");
+        warnBanner.style.cssText = "padding:10px 14px; border-radius:14px; background:var(--sig-danger-bg); border:1px solid rgba(239,68,68,0.4); color:#FECACA; font-size:12px; line-height:1.45;";
+        warnBanner.innerHTML = `<strong>🚨 28°C+ 高温危险拦截：</strong>当前柏油路约 ${calcAsphaltTemp(state.envTempC)}°C（60秒烫伤狗爪），已锁止户外草地推荐，仅建议室内空调友好商家。`;
+        body.appendChild(warnBanner);
+      }
+
+      if (list.length === 0) {
+        body.innerHTML += `<div style="padding:32px 16px; text-align:center; color:var(--text-muted); font-size:13px;">当前筛选下暂无地点</div>`;
+        return;
+      }
+
+      list.forEach(spot => {
+        const isStale = spot.daysSinceVerified > 90 || spot.status === "needs_reverify";
+        const isBanned = spot.category === "banned_park";
+        const isPending = spot.status === "pending_2_votes" || spot.verifyCount < 2;
+
+        let dotClass = "status-dot";
+        let badgeClass = "safe";
+        let badgeLabel = `${spot.trustScore} 分`;
+
+        if (isBanned) {
+          dotClass = "status-dot danger";
+          badgeClass = "danger";
+          badgeLabel = "禁狗对照点";
+        } else if (isStale) {
+          dotClass = "status-dot warn";
+          badgeClass = "warn";
+          badgeLabel = `待复核 · ${spot.trustScore}`;
+        } else if (isPending) {
+          dotClass = "status-dot warn";
+          badgeClass = "warn";
+          badgeLabel = `待核实 ${spot.verifyCount}/2`;
+        } else if (spot.leashStatus === "onleash_required") {
+          dotClass = "status-dot warn";
+          badgeClass = "warn";
+          badgeLabel = `必牵绳 · ${spot.trustScore}`;
+        } else {
+          badgeLabel = `可放绳 · ${spot.trustScore}`;
+        }
+
+        const card = document.createElement("div");
+        card.className = "spot-row-card";
+        card.onclick = () => openSpotDetail(spot.id);
+
+        // 严格控制三行信息结构！
+        card.innerHTML = `
+          <div class="row-line-1">
+            <div class="row-title-wrap">
+              <span class="${dotClass}"></span>
+              <span class="row-title">${spot.name}</span>
+            </div>
+            <span class="trust-badge ${badgeClass}">${badgeLabel}</span>
+          </div>
+          <div class="row-line-2">${spot.oneLineRule}</div>
+          <div class="row-line-3">
+            <div class="micro-tags">
+              <span>${spot.facilities.water ? "💧有水源" : "需自备水"}</span>
+              <span>🌳遮阴 ${spot.facilities.shadeRate}%</span>
+              <span>${spot.facilities.fence ? "🛡️双门围栏" : "开放边界"}</span>
+            </div>
+            <span>${spot.daysSinceVerified === 0 ? "今日核实" : `${spot.daysSinceVerified}天前`} · ${spot.verifyCount}人</span>
+          </div>
+        `;
+        body.appendChild(card);
+      });
+    }
+
+    // ==================== L3: 二级地点详情与到场三态投票核实 (点击后才展开) ====================
+    function openSpotDetail(spotId) {
+      state.selectedSpotId = spotId;
+      state.drawerMode = "spot_detail";
+      document.getElementById("sheetFilterStrip").style.display = "none";
+
+      const spot = window.PAWTRUST_DATA.spots.find(s => s.id === spotId);
+      if (spot && state.map) {
+        // 将相机平滑聚焦到该地点的多边形区域（稍微偏北以避开半屏抽屉遮挡）
+        state.map.flyTo([spot.lat - 0.0035, spot.lng], 15, { duration: 0.65 });
+      }
+
+      setSheetDetent("half");
+      renderSpatialMapLayers();
+      renderSpotDetailView();
+    }
+
+    function renderSpotDetailView() {
+      const spot = window.PAWTRUST_DATA.spots.find(s => s.id === state.selectedSpotId);
+      if (!spot) return openDrawerMode("discover");
+
+      const isStale = spot.daysSinceVerified > 90 || spot.status === "needs_reverify";
+      const isPending = spot.status === "pending_2_votes" || spot.verifyCount < 2;
+      const isBanned = spot.category === "banned_park";
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+
+      const body = document.getElementById("sheetBody");
+      body.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <button class="detent-toggle-pill" onclick="openDrawerMode('discover')">‹ 返回列表</button>
+          <span style="font-size:11.5px; color:var(--text-muted); font-family:var(--font-mono);">
+            最后核实 ${spot.lastVerifiedDate} · ${spot.verifyCount}人参与
+          </span>
+        </div>
+
+        <div style="margin-top:2px;">
+          <div style="font-size:12px; color:var(--text-secondary); font-weight:500;">${spot.subType}</div>
+          <h2 style="font-size:19px; font-weight:700; margin-top:3px; line-height:1.25;">${spot.name}</h2>
+          <div style="font-size:12.5px; color:var(--text-muted); margin-top:4px;">📍 ${spot.address}</div>
+        </div>
+
+        <!-- 空间边界与放绳/牵绳核心规则高亮卡 -->
+        <div style="padding:12px 14px; border-radius:16px; background:${isBanned ? "var(--sig-danger-bg)" : isStale ? "var(--sig-warn-bg)" : "var(--sig-safe-bg)"}; border:1px solid ${isBanned ? "rgba(239,68,68,0.4)" : isStale ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.35)"}; font-size:12.5px; line-height:1.5;">
+          <div style="font-weight:700; color:${isBanned ? "#FCA5A5" : isStale ? "#FDE68A" : "#6EE7B7"};">
+            ${spot.oneLineRule}
+          </div>
+          <div style="color:var(--text-secondary); margin-top:4px; font-size:12px;">
+            ${spot.parkZoneDetail}
+          </div>
+        </div>
+
+        <!-- 四宫格 Bento 核心指标 -->
+        <div class="bento-grid">
+          <div class="bento-cell">
+            <span class="bento-label">法律依据类型</span>
+            <span class="bento-val" style="font-size:12.5px;">${spot.legalBasisType}</span>
+          </div>
+          <div class="bento-cell">
+            <span class="bento-label">水源与遮阴实测</span>
+            <span class="bento-val" style="font-size:12.5px;">${spot.facilities.water ? "有直饮水" : "需自备水"} · 遮阴 ${spot.facilities.shadeRate}%</span>
+          </div>
+          <div class="bento-cell">
+            <span class="bento-label">围栏与分区</span>
+            <span class="bento-val" style="font-size:12.5px;">${spot.facilities.fenceNote}</span>
+          </div>
+          <div class="bento-cell">
+            <span class="bento-label">开放时间与费用</span>
+            <span class="bento-val" style="font-size:12.5px;">${spot.fee} · ${spot.openHours}</span>
+          </div>
+        </div>
+
+        <!-- AI 个性化出行与当前持证犬只合规校验 -->
+        <div class="bento-cell" style="gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="bento-label">✦ AI 出行安全与分城合规检查（结合「${state.currentDog.dogName} · ${state.currentDog.weightKg}kg」）</span>
+            <span style="font-size:11px; color:var(--text-muted);">${city.name}条例</span>
+          </div>
+          <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.5;">
+            ${state.envTempC >= 28 && spot.category !== "pet_merchant"
+              ? `<span style="color:var(--sig-danger); font-weight:600;">高温拦截：当前气温 ${state.envTempC}°C（路面约 ${calcAsphaltTemp(state.envTempC)}°C），60秒即可烫伤狗爪，强烈建议暂停前往户外草坪。</span>`
+              : `${spot.legalBasisWhy} ${spot.fieldSignal}`}
+          </div>
+        </div>
+
+        <!-- 6.3 持证核实三态投票 -->
+        <div class="bento-cell" style="gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px; font-weight:600;">到场实拍核实投票（需持证）</span>
+            <span style="font-size:11px; color:var(--text-muted);">自动附加时间戳与定位</span>
+          </div>
+          ${isPending ? `<div style="font-size:12px; color:var(--sig-warn);">当前为新提交待核实状态 (${spot.verifyCount}/2)，再获 1 票「确认属实」即正式公开上架。</div>` : ""}
+          ${isStale ? `<div style="font-size:12px; color:var(--sig-warn);">当前已超 90 天未复核 (${spot.daysSinceVerified}天)，投「确认属实」将立即解除降级并恢复信任分。</div>` : ""}
+          <div class="verify-vote-bar">
+            <button class="vote-pill-btn" onclick="castVote('${spot.id}', 'confirm')">
+              <span style="color:var(--sig-safe); font-weight:700;">✓ 确认属实</span>
+              <span style="font-size:10.5px; color:var(--text-muted);">刷新核实日期</span>
+            </button>
+            <button class="vote-pill-btn" onclick="castVote('${spot.id}', 'wrong')">
+              <span style="color:var(--sig-warn); font-weight:700;">! 信息有误 (${spot.disputeCount}/2)</span>
+              <span style="font-size:10.5px; color:var(--text-muted);">满2票降级</span>
+            </button>
+            <button class="vote-pill-btn" onclick="castVote('${spot.id}', 'closed')">
+              <span style="color:var(--sig-danger); font-weight:700;">✕ 已禁狗 (${spot.closedVotes}/2)</span>
+              <span style="font-size:10.5px; color:var(--text-muted);">满2票下线</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function castVote(spotId, type) {
+      if (!ensureLicensed("参与地点核实投票")) return;
+      const spot = window.PAWTRUST_DATA.spots.find(s => s.id === spotId);
+      if (!spot) return;
+
+      if (type === "confirm") {
+        const wasStale = spot.daysSinceVerified > 90 || spot.status === "needs_reverify";
+        const wasPending = spot.status === "pending_2_votes";
+        spot.verifyCount += 1;
+        spot.lastVerifiedDate = "2026-11-08";
+        spot.daysSinceVerified = 0;
+
+        if (wasStale) {
+          spot.status = "verified";
+          spot.trustScore = 91;
+          spot.oneLineRule = "已由持证狗友完成现场复核 · 全程必须牵绳";
+          notify(`已唤醒 >90天待复核地点，信任分恢复至 91`);
+        } else if (wasPending && spot.verifyCount >= 2) {
+          spot.status = "verified";
+          spot.trustScore = 89;
+          spot.oneLineRule = "已满 2 人核实通过 · 全程必须牵绳";
+          state.spotFilter = "all";
+          notify(`已满 2 人核实，「${spot.shortName || spot.name}」正式进入公开列表`);
+        } else {
+          spot.trustScore = Math.min(99, spot.trustScore + 1);
+          notify(`核实成功（${spot.verifyCount}人已核 · 信任分 ${spot.trustScore}）`);
+        }
+      } else if (type === "wrong") {
+        spot.disputeCount += 1;
+        spot.trustScore = Math.max(30, spot.trustScore - 18);
+        if (spot.disputeCount >= 2) {
+          spot.status = "needs_reverify";
+          notify(`「信息有误」满 2 票，地点已降级为待复核`, "warn");
+        } else {
+          notify(`已记录信息有误 (${spot.disputeCount}/2)`, "warn");
+        }
+      } else if (type === "closed") {
+        spot.closedVotes += 1;
+        if (spot.closedVotes >= 2) {
+          spot.category = "banned_park";
+          spot.leashStatus = "banned";
+          spot.oneLineRule = "经现场核实已新增立牌禁狗 · 已转为避坑对照点";
+          if (spot.zones && spot.zones[0]) spot.zones[0].type = "banned";
+          notify(`满 2 票已关闭，地点已下线转为红色禁狗对照区`, "danger");
+        } else {
+          notify(`已记录关闭投票 (${spot.closedVotes}/2)`, "warn");
+        }
+      }
+
+      renderSpatialMapLayers();
+      renderSpotDetailView();
+    }
+
+    // ==================== 6.2 发布地点视图 ====================
+    function renderPublishView() {
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      const body = document.getElementById("sheetBody");
+      body.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; font-weight:700;">发布可遛地点（${city.name}）</h3>
+          <span style="font-size:11.5px; color:var(--sig-warn);">需 2 人核实才上公开列表</span>
+        </div>
+
+        <div class="bento-cell" style="gap:10px;">
+          <div>
+            <div class="bento-label" style="margin-bottom:4px;">地点名称 *</div>
+            <input id="pubName" class="clean-input" placeholder="如：深圳湾科技园外围市政退线草坡" />
+          </div>
+
+          <div class="bento-grid">
+            <div>
+              <div class="bento-label" style="margin-bottom:4px;">地点类型 *</div>
+              <select id="pubCat" class="clean-select">
+                <option value="non_park_green">非公园绿地 (带法律依据)</option>
+                <option value="pet_park">官方指定宠物公园</option>
+                <option value="pet_merchant">宠物友好商家</option>
+              </select>
+            </div>
+            <div>
+              <div class="bento-label" style="margin-bottom:4px;">放绳 / 牵绳规则 *</div>
+              <select id="pubLeash" class="clean-select">
+                <option value="onleash_required">全程必须牵绳 (${city.leashShort})</option>
+                <option value="fenced_offleash">双门封闭围栏内可放绳</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div class="bento-label" style="margin-bottom:4px;">法律依据类型与不禁狗原因 *</div>
+            <select id="pubLegal" class="clean-select" style="margin-bottom:6px;">
+              <option value="市政道路附属绿化带（非公园红线范围）">市政道路附属绿化带（非公园红线范围）</option>
+              <option value="开放式河岸步道（现场实测无禁犬牌）">开放式河岸步道（现场实测无禁犬牌）</option>
+              <option value="社区开放草坪 / 官方指定宠物专区">社区开放草坪 / 官方指定宠物专区</option>
+              <option value="商业物业允许入内（全体型友好）">商业物业允许入内（全体型友好）</option>
+            </select>
+            <input id="pubAddress" class="clean-input" placeholder="详细地址与边界说明（如：位于公园闸口外侧退线草坡）" />
+          </div>
+
+          <div class="bento-grid" style="font-size:12.5px;">
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pubWater" checked /> 💧 有可靠水源</label>
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pubShade" checked /> 🌳 树荫充足 (75%)</label>
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pubFence" /> 🛡️ 双门封闭围栏</label>
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pubSize" /> ⚖️ 大小犬分区</label>
+          </div>
+
+          <button class="btn-primary-clean" onclick="submitSpot()">
+            持证提交（进入 1/2 待核实池）
+          </button>
+        </div>
+      `;
+    }
+
+    function submitSpot() {
+      if (!ensureLicensed("发布新地点")) return;
+      const name = document.getElementById("pubName").value.trim() || "侨香路北侧市政退线街头绿带";
+      const cat = document.getElementById("pubCat").value;
+      const leash = document.getElementById("pubLeash").value;
+      const hasFence = document.getElementById("pubFence").checked;
+
+      if (leash === "fenced_offleash" && !hasFence && cat !== "pet_park") {
+        notify("法规红线拦截：非封闭围栏区严禁标记为可放绳", "danger");
+        return;
+      }
+
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      const lat = city.center[0] + (Math.random() - 0.5) * 0.015;
+      const lng = city.center[1] + (Math.random() - 0.5) * 0.015;
+
+      const newSpot = {
+        id: "ugc-" + Date.now(),
+        city: state.currentCity,
+        name,
+        shortName: name.slice(0, 6),
+        category: cat,
+        subType: "用户新提交 · 待核实 (1/2)",
+        parkZoneMode: leash === "fenced_offleash" ? "fenced_offleash" : "onleash_only",
+        oneLineRule: "新提交待核实 (1/2) · 再需 1 位持证用户核实即公开上架",
+        parkZoneDetail: "刚刚由持证用户提交实拍，满 2 人核实通过后进入公开列表。",
+        lat,
+        lng,
+        address: document.getElementById("pubAddress").value.trim() || `${city.name}市政退线绿化带`,
+        leashStatus: leash,
+        leashLabel: "待核实 1/2",
+        zones: [
+          {
+            type: leash === "fenced_offleash" ? "offleash" : "onleash",
+            label: name,
+            coords: [[lat + 0.0012, lng - 0.0015], [lat + 0.0012, lng + 0.0015], [lat - 0.0012, lng + 0.0015], [lat - 0.0012, lng - 0.0015]]
+          }
+        ],
+        facilities: {
+          water: document.getElementById("pubWater").checked,
+          waterNote: "发布者实拍确认",
+          shade: document.getElementById("pubShade").checked,
+          shadeRate: document.getElementById("pubShade").checked ? 75 : 30,
+          fence: hasFence,
+          fenceNote: hasFence ? "有围栏" : "开放式边界",
+          sizeZone: document.getElementById("pubSize").checked,
+          sizeZoneNote: "按实测"
+        },
+        fee: "免费",
+        openHours: "全天",
+        lastVerifiedDate: "2026-11-08",
+        daysSinceVerified: 0,
+        verifyCount: 1,
+        disputeCount: 0,
+        closedVotes: 0,
+        trustScore: 68,
+        status: "pending_2_votes",
+        legalBasisType: document.getElementById("pubLegal").value,
+        legalBasisWhy: "现场实拍无禁犬立牌。",
+        fieldSignal: "等待第 2 位持证养犬人到场核实。"
+      };
+
+      window.PAWTRUST_DATA.spots.unshift(newSpot);
+      state.spotFilter = "pending_2_votes";
+      notify("已进入待核实池 (1/2)，满 2 人核实即上首页");
+      openDrawerMode("discover");
+    }
+
+    // ==================== 6.5 投毒 / 危险实时预警视图 ====================
+    function renderAlertsView() {
+      const body = document.getElementById("sheetBody");
+      const list = window.PAWTRUST_DATA.alerts.filter(a => a.city === state.currentCity);
+
+      body.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3 style="font-size:16px; font-weight:700;">投毒与危险实时预警</h3>
+            <div style="font-size:11.5px; color:var(--text-muted);">需满 3 位持证养犬人交叉确认才激活地图红圈与顶部警报</div>
+          </div>
+          <button class="detent-toggle-pill" style="color:#FCA5A5; border-color:rgba(239,68,68,0.4);" onclick="createQuickAlert()">＋ 上报险情</button>
+        </div>
+      `;
+
+      list.forEach(item => {
+        const isConfirmed = item.status === "confirmed";
+        const isPending = item.status === "pending";
+        const badgeClass = isConfirmed ? "danger" : isPending ? "warn" : "safe";
+        const statusLabel = {
+          confirmed: `已确认 (${item.confirmCount}/3 · 地图高亮中)`,
+          pending: `待确认 (${item.confirmCount}/3 · 暂不上首页)`,
+          resolved: "已处理 (现场已清理)",
+          debunked: "已辟谣 (证实误报)"
+        }[item.status];
+
+        const card = document.createElement("div");
+        card.className = "spot-row-card";
+        card.style.gap = "8px";
+        card.innerHTML = `
+          <div class="row-line-1">
+            <span class="row-title">${item.title}</span>
+            <span class="trust-badge ${badgeClass}">${statusLabel}</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary); line-height:1.45;">
+            📍 ${item.locationText} · ${item.note}
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-top:4px; border-top:1px solid var(--border-hairline);">
+            <span style="font-size:11px; color:var(--text-muted);">上报人：${item.reporter} · 72h自动降级</span>
+            <div style="display:flex; gap:6px;">
+              ${isPending ? `<button class="detent-toggle-pill" style="color:var(--sig-danger); border-color:rgba(239,68,68,0.45);" onclick="confirmAlert('${item.id}')">+ 交叉确认 (${item.confirmCount}/3→${item.confirmCount+1}/3)</button>` : ""}
+              ${isConfirmed ? `<button class="detent-toggle-pill" style="color:var(--sig-safe);" onclick="resolveAlert('${item.id}', 'resolved')">标记已清理</button>` : ""}
+              ${(isPending || isConfirmed) ? `<button class="detent-toggle-pill" onclick="resolveAlert('${item.id}', 'debunked')">辟谣</button>` : ""}
+            </div>
+          </div>
+        `;
+        body.appendChild(card);
+      });
+    }
+
+    function confirmAlert(alertId) {
+      if (!ensureLicensed("交叉确认危险预警")) return;
+      const item = window.PAWTRUST_DATA.alerts.find(a => a.id === alertId);
+      if (!item) return;
+      item.confirmCount += 1;
+      if (item.confirmCount >= 3 && item.status === "pending") {
+        item.status = "confirmed";
+        notify(`已满 3 人交叉确认！地图红色警戒圈与顶部警报已激活`, "danger");
+        if (state.map) state.map.flyTo([item.lat, item.lng], 15, { duration: 0.7 });
+      } else {
+        notify(`交叉确认 +1 (${item.confirmCount}/3)`);
+      }
+      updatePoisonHudState();
+      renderSpatialMapLayers();
+      renderAlertsView();
+    }
+
+    function resolveAlert(alertId, status) {
+      if (!ensureLicensed("更新预警状态")) return;
+      const item = window.PAWTRUST_DATA.alerts.find(a => a.id === alertId);
+      if (!item) return;
+      item.status = status;
+      notify(status === "resolved" ? "已标记为清理完毕，地图红圈已解除" : "已标记为误报辟谣");
+      updatePoisonHudState();
+      renderSpatialMapLayers();
+      renderAlertsView();
+    }
+
+    function createQuickAlert() {
+      if (!ensureLicensed("上报危险预警")) return;
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      window.PAWTRUST_DATA.alerts.unshift({
+        id: "alert-" + Date.now(),
+        city: state.currentCity,
+        title: `${city.name}市民中心南侧草坪发现可疑染色骨头`,
+        hazardType: "可疑饵料",
+        locationText: `${city.name}核心步道灌木丛旁`,
+        lat: city.center[0] + 0.004,
+        lng: city.center[1] - 0.004,
+        radiusMeters: 350,
+        reportedAt: "刚刚",
+        hoursAgo: 0.1,
+        ttlHours: 72,
+        confirmCount: 1,
+        requiredConfirm: 3,
+        status: "pending",
+        reporter: `${state.currentDog.dogName} (${state.currentDog.licenseNo})`,
+        confirmpLogs: [],
+        note: "新上报处于【待确认 1/3】状态，需再有 2 位持证狗友交叉确认才上首页地图高亮。"
+      });
+      notify("已上报 (1/3 待确认)，满 3 人确认后激活全城红圈");
+      renderAlertsView();
+    }
+
+    // ==================== 6.4 数字犬证认证与信任门槛视图 ====================
+    function ensureLicensed(actionName) {
+      if (!state.isLicenseVerified) {
+        notify(`需先完成犬证认证才可${actionName}`, "warn");
+        openDrawerMode("license");
+        return false;
+      }
+      return true;
+    }
+
+    function renderLicenseView() {
+      const d = state.currentDog;
+      const city = window.PAWTRUST_DATA.cities[state.currentCity];
+      const isBanned = d.breed.includes("比特") || d.breed.includes("藏獒");
+      const body = document.getElementById("sheetBody");
+
+      body.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; font-weight:700;">数字犬证与准入核验</h3>
+          <span class="trust-badge ${isBanned ? "danger" : state.isLicenseVerified ? "safe" : "warn"}">
+            ${isBanned ? "禁养拦截" : state.isLicenseVerified ? "已认证持证人" : "未持证 (仅浏览)"}
+          </span>
+        </div>
+
+        <!-- 极简克制的 Apple Wallet 风格持证卡 -->
+        <div style="padding:18px; border-radius:22px; background:linear-gradient(145deg, rgba(34,34,40,0.95), rgba(18,18,22,0.98)); border:1px solid ${isBanned ? "rgba(239,68,68,0.55)" : "var(--border-strong)"}; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="font-size:10.5px; color:var(--text-muted); letter-spacing:0.06em;">PAWTRUST CREDENTIAL · AES-256</div>
+              <div style="font-size:20px; font-weight:700; margin-top:2px;">${d.dogName} · ${d.breed}</div>
+            </div>
+            <span style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);">${d.licenseNo}</span>
+          </div>
+
+          <div class="bento-grid" style="grid-template-columns:repeat(3,1fr);">
+            <div>
+              <div class="bento-label">体重 / 年龄</div>
+              <div class="bento-val" style="font-size:12.5px;">${d.weightKg}kg · ${d.ageYears}岁</div>
+            </div>
+            <div>
+              <div class="bento-label">签发与有效期</div>
+              <div class="bento-val" style="font-size:12.5px;">${d.validUntil}</div>
+            </div>
+            <div>
+              <div class="bento-label">狗脸辅助匹配</div>
+              <div class="bento-val" style="font-size:12.5px;">${d.faceMatchScore}% (仅辅助)</div>
+            </div>
+          </div>
+
+          <div style="font-size:12px; padding:9px 12px; border-radius:12px; background:${isBanned ? "var(--sig-danger-bg)" : "var(--glass-subtle)"}; color:${isBanned ? "#FCA5A5" : "var(--text-secondary)"};">
+            ${isBanned
+              ? `⛔ ${city.name}合规拦截：「${d.breed}」属禁养烈性犬名录（共${city.compliance.bannedBreedsCount}种），严禁核发通过。`
+              : `✓ 符合${city.name}准养规定 · ${city.compliance.leashRule}`}
+          </div>
+        </div>
+
+        <!-- 切换 4 种 AI 识别样本 -->
+        <div class="bento-cell" style="gap:8px;">
+          <div class="bento-label">AI 犬证 OCR 提取与分城合规核验样本切换：</div>
+          <div class="bento-grid">
+            <button class="detent-toggle-pill" onclick="applyLicenseSample('compliant_corgi')">深圳合规柯基 (12.5kg)</button>
+            <button class="detent-toggle-pill" onclick="applyLicenseSample('large_golden')">香港大型金毛 (31kg)</button>
+            <button class="detent-toggle-pill" onclick="applyLicenseSample('french_bulldog')">上海短鼻法斗 (易中暑)</button>
+            <button class="detent-toggle-pill" style="color:#FCA5A5;" onclick="applyLicenseSample('banned_pitbull_test')">比特犬 (测试禁养拦截)</button>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:2px;">
+            • 狗脸照片匹配仅作辅助手段，不可作为唯一身份判定依据（换角度、剃毛、长大后匹配率会下降）。<br/>
+            • 犬证属敏感个人信息，加密存储，用户注销时立即彻底删除。
+          </div>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <button class="detent-toggle-pill" style="flex:1;" onclick="toggleGuestMode()">
+              ${state.isLicenseVerified ? "切换为「未持证游客」测试拦截" : "恢复「已持证」状态"}
+            </button>
+            <button class="detent-toggle-pill" style="color:var(--sig-danger);" onclick="purgeLicenseData()">注销并擦除犬证数据</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function applyLicenseSample(key) {
+      const p = window.PAWTRUST_DATA.licensePresets[key];
+      if (!p) return;
+      state.currentDog = { ...p };
+      if (key === "banned_pitbull_test") {
+        state.isLicenseVerified = false;
+        notify("命中禁养烈性犬名录，已拦截认证", "danger");
+      } else {
+        state.isLicenseVerified = true;
+        notify(`AI 已提取「${p.dogName} (${p.breed})」犬证信息`);
+      }
+      document.getElementById("dockLicenseLabel").textContent = state.isLicenseVerified ? "持证卡" : "未持证";
+      updateThermalState();
+      renderLicenseView();
+    }
+
+    function toggleGuestMode() {
+      state.isLicenseVerified = !state.isLicenseVerified;
+      document.getElementById("dockLicenseLabel").textContent = state.isLicenseVerified ? "持证卡" : "未持证";
+      notify(state.isLicenseVerified ? "已恢复持证身份" : "已切换为未持证游客（点击发布/核实将触发拦截）", state.isLicenseVerified ? "safe" : "warn");
+      renderLicenseView();
+    }
+
+    function purgeLicenseData() {
+      state.isLicenseVerified = false;
+      state.currentDog.licenseNo = "DELETED-AES256";
+      document.getElementById("dockLicenseLabel").textContent = "未持证";
+      notify("已注销并彻底物理删除敏感犬证数据", "danger");
+      renderLicenseView();
+    }
+
+    // ==================== 收纳式演示调测面板（不污染主地图，一键验证全部规则） ====================
+    function renderDemoControlView() {
+      const body = document.getElementById("sheetBody");
+      body.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; font-weight:700;">PRD 核心业务规则一键验收</h3>
+          <span style="font-size:11.5px; color:var(--text-muted);">不占用主屏幕空间</span>
+        </div>
+
+        <div class="bento-cell" style="gap:8px;">
+          <button class="spot-row-card" style="text-align:left;" onclick="selectCity('shenzhen',false); openSpotDetail('sz-4');">
+            <div class="row-line-1"><span class="row-title">1. 验证「>90天无人复核自动降级」与复核唤醒</span><span class="trust-badge warn">108天未核</span></div>
+            <div class="row-line-2">定位至深圳「前海桂湾草坪 (信任分52)」，点击确认属实立即恢复至 91 分</div>
+          </button>
+
+          <button class="spot-row-card" style="text-align:left;" onclick="selectCity('shenzhen',false); openSpotDetail('sz-pending-1');">
+            <div class="row-line-1"><span class="row-title">2. 验证「新发布需满 2 人核实才上公开列表」</span><span class="trust-badge warn">1/2 待核实</span></div>
+            <div class="row-line-2">定位至「梅林街角绿地 (1/2)」，投出第 2 票后立即晋升公开首页</div>
+          </button>
+
+          <button class="spot-row-card" style="text-align:left;" onclick="selectCity('shenzhen',false); confirmAlert('alert-sz-2');">
+            <div class="row-line-1"><span class="row-title">3. 验证「投毒预警满 3 人交叉确认激活红圈」</span><span class="trust-badge danger">2/3 → 3/3</span></div>
+            <div class="row-line-2">对深圳后海河预警投第 3 票，立即在全屏地图画出红色警戒圈</div>
+          </button>
+
+          <button class="spot-row-card" style="text-align:left;" onclick="selectCity('hongkong',false); openDrawerMode('discover');">
+            <div class="row-line-1"><span class="row-title">4. 验证香港「宠物公园 (放绳) vs 共享公园 (牵绳)」空间区分</span><span class="trust-badge safe">Polygon 边界</span></div>
+            <div class="row-line-2">切换至香港，对比蝴蝶谷绿色放绳多边形与维多利亚公园琥珀色虚线牵绳区</div>
+          </button>
+
+          <button class="spot-row-card" style="text-align:left;" onclick="onTempChange(31); document.getElementById('tempSlider').value=31; openDrawerMode('discover');">
+            <div class="row-line-1"><span class="row-title">5. 验证「28°C+ 高温危险区间」拦截户外遛狗</span><span class="trust-badge danger">31°C · 路面63°C</span></div>
+            <div class="row-line-2">将气温调至 31°C，触发 60 秒烫爪高危锁止</div>
+          </button>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
